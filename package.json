@@ -19,11 +19,12 @@
     "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml down",
     "check:source": "node docs/check_source.cjs",
     "audit:exceptions": "node scripts/check-audit.mjs",
+    "build:dependencies": "pnpm --filter \"@salesos/database^...\" build",
     "db:role": "pnpm --filter @salesos/database role",
     "db:generate": "pnpm --filter @salesos/database generate",
     "db:migrate": "pnpm --filter @salesos/database migrate",
     "db:seed": "pnpm --filter @salesos/database seed",
-    "db:setup": "pnpm db:generate && pnpm db:role && pnpm db:migrate && pnpm db:seed"
+    "db:setup": "pnpm db:generate && pnpm build:dependencies && pnpm db:role && pnpm db:migrate && pnpm db:seed"
   },
   "pnpm": {
     "overrides": {

@@ -36,6 +36,10 @@ jobs:
       SALESOS_APP_PASSWORD: ci-app-password
       DATABASE_URL_WORKER: postgresql://salesos_worker:ci-worker-password@127.0.0.1:5432/salesos
       SALESOS_WORKER_PASSWORD: ci-worker-password
+      DATABASE_URL_IDENTITY: postgresql://salesos_identity:ci-identity-password@127.0.0.1:5432/salesos
+      SALESOS_IDENTITY_PASSWORD: ci-identity-password
+      MAIL_MODE: capture
+      SALESOS_QUEUE_PREFIX: ci
       REDIS_URL: redis://127.0.0.1:6379
       DATA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       INTERNAL_JOB_TOKEN: ci-internal-job-token
