@@ -44,6 +44,19 @@ describe.skipIf(!adminUrl || !process.env.DATABASE_URL_WORKER)('migration probe'
            ORDER BY proname`,
         );
         expect(functions.rows.map((row) => row.proname)).toEqual(['list_pending_outbox', 'tenant_is_active']);
+        const vector = await check.query<{ extname: string }>(`SELECT extname FROM pg_extension WHERE extname = 'vector'`);
+        expect(vector.rows.map((row) => row.extname)).toEqual(['vector']);
+        const tables = await check.query<{ table_name: string }>(
+          `SELECT table_name FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name IN ('products', 'knowledge_embeddings', 'embedding_indexes')
+           ORDER BY table_name`,
+        );
+        expect(tables.rows.map((row) => row.table_name)).toEqual(['embedding_indexes', 'knowledge_embeddings', 'products']);
+        const column = await check.query<{ udt_name: string }>(
+          `SELECT udt_name FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'knowledge_embeddings' AND column_name = 'embedding'`,
+        );
+        expect(column.rows[0]?.udt_name).toBe('vector');
       } finally {
         await check.end();
       }

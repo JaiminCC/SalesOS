@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { e2eDatabaseName, loadRootEnv, repoRoot } from './env';
@@ -23,4 +24,5 @@ export default async function globalTeardown(): Promise<void> {
   } finally {
     await admin.end();
   }
+  rmSync(resolve(repoRoot, '.data/e2e-objects'), { recursive: true, force: true });
 }

@@ -271,6 +271,8 @@ Queues: `research`, `scoring`, `drafting`, `outbound`, `inbound`, `qualification
 
 Each job payload is `{ tenantId, outboxId, idempotencyKey, correlationId }`. The worker re-reads the outbox and domain rows. Per-tenant concurrency limits come from tenant settings. A paused tenant's external queues do not start new side effects; in-flight jobs hit the kill-switch check and exit as `CANCELLED` or `PAUSED`.
 
+Sprint 3 adds `knowledge.process` on the existing foundation queue. The payload is `{ tenantId, documentId, outboxId }` for event `knowledge.document.process.v1`. The worker reads private object storage, extracts and chunks text, and writes embeddings only when the configured provider matches the tenant embedding index. A document failure is stored as `FAILED` and does not throw out of the job. The same relay calls `list_due_knowledge_deletions` and removes retained bytes that are past `retain_until`. Playwright and the API integration suite set `SALESOS_PROCESS_KNOWLEDGE=inline` so they do not depend on a second worker process.
+
 ## 10. Observability
 
 Structured logs with `traceId`, `tenantId`, `jobId`. No message bodies, transcripts, or secrets.
@@ -285,7 +287,7 @@ Pilot SLOs (NFR-03, NFR-04, NFR-05): 99% monthly API availability excluding agre
 
 Development Compose (to be created in Phase 1, replacing the reference file that points at missing Dockerfiles):
 
-- `postgres:16` with a health check, private network, password from env.
+- `pgvector/pgvector:pg16` with a health check, private network, password from env. The image pin includes the `vector` extension. Local volumes are kept when the image is recreated. Do not delete `infra_salesos_postgres`.
 - `redis:7` with AOF and a password, private network.
 - `api`, `worker`, `web` built from the monorepo.
 - Postgres and Redis ports are not published on a shared or production host. Local laptops may publish them only on `127.0.0.1`.
@@ -306,3 +308,13 @@ This document is accepted when:
 - Tenant context, policy, and provider acknowledgement are visible as separate steps, and none of them is "the UI said success".
 - The eight prototype agents map onto supervisor tasks without a new service per agent.
 - Demo mode and API mode are both defined, and production defaults to API mode.
+
+## 14. Product intelligence (Sprint 3)
+
+Products, versions, ICPs, positioning, pricing, and knowledge are tenant rows. The browser never supplies the organization id used for writes. `products.read` and `products.write` cover the catalog and drafts. `approvals.manage` approves or rejects versions and documents. `products.publish` publishes an approved version. A user who can edit a draft does not receive publish rights from that edit permission.
+
+Published snapshots are immutable. A database trigger rejects snapshot edits except while both the old and new status are `DRAFT`, and except the single `knowledgeDocumentIds` change on `APPROVED` → `PUBLISHED`. Publishing takes a transaction advisory lock, supersedes the current published version, and freezes the approved document ids.
+
+Knowledge bytes live under `SALESOS_STORAGE_ROOT` (default `data/objects`, gitignored), never in `apps/web/public`. API responses omit `storageKey` and filesystem paths. Retrieval for live agent context uses only the published version and documents that are still `APPROVED`. Keyword results are labeled `keyword`. Semantic results require the pinned 384-dimension model. The HTTP embedding provider is refused when `NODE_ENV=test` or `CI=true`.
+
+The reusable context service is `POST /api/v1/products/:id/context/preview`. It is not an LLM agent. Command Center, campaigns, inbox, and WhatsApp stay simulated.

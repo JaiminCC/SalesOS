@@ -21,13 +21,20 @@ model Tenant {
   automationPausedBy String?   @map("automation_paused_by") @db.Uuid
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  memberships     Membership[]
-  roles           Role[]
-  auditEvents     AuditEvent[]
-  outboxEvents    OutboxEvent[]
-  idempotencyKeys IdempotencyKey[]
-  jobExecutions   JobExecution[]
-  invitations     Invitation[]
+  memberships              Membership[]
+  roles                    Role[]
+  auditEvents              AuditEvent[]
+  outboxEvents             OutboxEvent[]
+  idempotencyKeys          IdempotencyKey[]
+  jobExecutions            JobExecution[]
+  invitations              Invitation[]
+  products                 Product[]
+  productVersions          ProductVersion[]
+  knowledgeDocuments       KnowledgeDocument[]
+  knowledgeChunks          KnowledgeChunk[]
+  knowledgeEmbeddings      KnowledgeEmbedding[]
+  embeddingIndex           EmbeddingIndex?
+  productDefaults          OrganizationProductDefault?
 
   @@map("tenants")
 }
@@ -290,4 +297,144 @@ model CapturedMessage {
 
   @@index([recipientHmac, createdAt])
   @@map("captured_messages")
+}
+
+model Product {
+  tenantId            String    @map("tenant_id") @db.Uuid
+  id                  String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String
+  productType         String    @map("product_type")
+  category            String    @default("")
+  shortDescription    String    @default("") @map("short_description")
+  detailedDescription String    @default("") @map("detailed_description")
+  website             String    @default("")
+  status              String    @default("ACTIVE")
+  tags                String[]  @default([])
+  targetMarkets       String[]  @default([]) @map("target_markets")
+  languages           String[]  @default([])
+  currency            String    @default("USD") @db.Char(3)
+  createdBy           String    @map("created_by") @db.Uuid
+  updatedBy           String    @map("updated_by") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt          DateTime? @map("archived_at") @db.Timestamptz(6)
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions            ProductVersion[]
+  documents           KnowledgeDocument[]
+
+  @@id([tenantId, id])
+  @@index([tenantId, status, updatedAt])
+  @@map("products")
+}
+
+model ProductVersion {
+  tenantId      String    @map("tenant_id") @db.Uuid
+  id            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId     String    @map("product_id") @db.Uuid
+  versionNumber Int       @map("version_number")
+  status        String
+  revision      Int       @default(1)
+  snapshot      Json
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  createdBy     String    @map("created_by") @db.Uuid
+  updatedBy     String    @map("updated_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product       Product   @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, productId, versionNumber])
+  @@index([tenantId, productId, status])
+  @@map("product_versions")
+}
+
+model KnowledgeDocument {
+  tenantId           String    @map("tenant_id") @db.Uuid
+  id                 String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId          String    @map("product_id") @db.Uuid
+  versionId          String?   @map("version_id") @db.Uuid
+  fileName           String    @map("file_name")
+  contentType        String    @map("content_type")
+  byteSize           Int       @map("byte_size")
+  sha256             String
+  storageKey         String    @map("storage_key")
+  status             String
+  failureReason      String?   @map("failure_reason")
+  semanticStatus     String    @default("UNAVAILABLE") @map("semantic_status")
+  embeddingModel     String?   @map("embedding_model")
+  pageCount          Int?      @map("page_count")
+  replacesDocumentId String?   @map("replaces_document_id") @db.Uuid
+  approvedBy         String?   @map("approved_by") @db.Uuid
+  approvedAt         DateTime? @map("approved_at") @db.Timestamptz(6)
+  rejectedReason     String?   @map("rejected_reason")
+  retainUntil        DateTime? @map("retain_until") @db.Timestamptz(6)
+  createdBy          String    @map("created_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product            Product   @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  chunks             KnowledgeChunk[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, sha256])
+  @@index([tenantId, productId, status])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  tenantId   String  @map("tenant_id") @db.Uuid
+  id         String  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId String  @map("document_id") @db.Uuid
+  productId  String  @map("product_id") @db.Uuid
+  chunkIndex Int     @map("chunk_index")
+  content    String
+  page       Int?
+  section    String?
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  document   KnowledgeDocument @relation(fields: [tenantId, documentId], references: [tenantId, id], onDelete: Cascade)
+  embedding  KnowledgeEmbedding?
+
+  @@id([tenantId, id])
+  @@unique([tenantId, documentId, chunkIndex])
+  @@index([tenantId, productId])
+  @@map("knowledge_chunks")
+}
+
+model KnowledgeEmbedding {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  chunkId    String   @map("chunk_id") @db.Uuid
+  model      String
+  dimensions Int
+  embedding  Unsupported("vector(384)")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chunk      KnowledgeChunk @relation(fields: [tenantId, chunkId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, chunkId])
+  @@map("knowledge_embeddings")
+}
+
+model EmbeddingIndex {
+  tenantId   String   @id @map("tenant_id") @db.Uuid
+  model      String
+  dimensions Int
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("embedding_indexes")
+}
+
+model OrganizationProductDefault {
+  tenantId               String   @id @map("tenant_id") @db.Uuid
+  positioning            Json     @default("{}")
+  pricing                Json     @default("{}")
+  knowledgeRetentionDays Int      @default(0) @map("knowledge_retention_days")
+  updatedBy              String   @map("updated_by") @db.Uuid
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("organization_product_defaults")
 }

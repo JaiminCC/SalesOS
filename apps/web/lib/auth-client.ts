@@ -132,3 +132,157 @@ export function listAudit(id: string) {
     `/api/v1/organizations/${id}/audit`,
   );
 }
+
+export type CatalogProduct = {
+  id: string;
+  organizationId: string;
+  name: string;
+  productType: string;
+  category: string;
+  shortDescription: string;
+  detailedDescription: string;
+  website: string;
+  status: string;
+  tags: string[];
+  targetMarkets: string[];
+  languages: string[];
+  currency: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  draftVersionId?: string | null;
+  publishedVersionId?: string | null;
+};
+
+export type ProductVersion = {
+  id: string;
+  versionNumber: number;
+  status: string;
+  revision: number;
+  publishedAt: string | null;
+  snapshot: null | {
+    icps: IcpRecord[];
+    positioning: Record<string, unknown>;
+    pricing: { model: string; visible: boolean; currency: string; summary: string; tiers: Array<{ name: string; amount?: string; unit?: string }> };
+    knowledgeDocumentIds: string[];
+  };
+};
+
+export type IcpRecord = {
+  id: string;
+  name: string;
+  priority: number;
+  archived: boolean;
+  industries: string[];
+  companySizes: string[];
+  countries: string[];
+  buyerTitles: string[];
+  painPoints: string[];
+  exclusionCriteria: string[];
+  languages: string[];
+};
+
+export type KnowledgeDocument = {
+  id: string;
+  fileName: string;
+  status: string;
+  semanticStatus: string;
+  failureReason: string | null;
+  byteSize: number;
+  contentType: string;
+  chunks?: Array<{ id: string; content: string; page: number | null; section: string | null }>;
+};
+
+const productPath = (id: string, suffix = '') => `/api/v1/products/${id}${suffix}`;
+
+export function listProducts(query = '') {
+  return authRequest<{ items: CatalogProduct[]; page: number; pageSize: number; total: number }>(`/api/v1/products${query}`);
+}
+
+export function createProduct(body: Record<string, unknown>) {
+  return authRequest<CatalogProduct>('/api/v1/products', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function getProduct(id: string) {
+  return authRequest<CatalogProduct>(productPath(id));
+}
+
+export function updateProduct(id: string, body: Record<string, unknown>) {
+  return authRequest<CatalogProduct>(productPath(id), { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export function duplicateProduct(id: string) {
+  return authRequest<CatalogProduct>(productPath(id, '/duplicate'), { method: 'POST' });
+}
+
+export function archiveProduct(id: string) {
+  return authRequest<CatalogProduct>(productPath(id, '/archive'), { method: 'POST' });
+}
+
+export function restoreProduct(id: string) {
+  return authRequest<CatalogProduct>(productPath(id, '/restore'), { method: 'POST' });
+}
+
+export function listProductVersions(id: string) {
+  return authRequest<ProductVersion[]>(productPath(id, '/versions'));
+}
+
+export function updateProductVersion(id: string, versionId: string, body: Record<string, unknown>) {
+  return authRequest<ProductVersion>(productPath(id, `/versions/${versionId}`), { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export function transitionVersion(id: string, versionId: string, action: 'submit' | 'approve' | 'reject' | 'publish' | 'archive' | 'restore', body?: Record<string, unknown>) {
+  return authRequest<ProductVersion>(productPath(id, `/versions/${versionId}/${action}`), { method: 'POST', body: body ? JSON.stringify(body) : undefined });
+}
+
+export function listIcps(id: string) {
+  return authRequest<IcpRecord[]>(productPath(id, '/icps'));
+}
+
+export function addIcp(id: string, body: Record<string, unknown>) {
+  return authRequest<IcpRecord[]>(productPath(id, '/icps'), { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function archiveIcp(id: string, icpId: string) {
+  return authRequest<IcpRecord[]>(productPath(id, `/icps/${icpId}/archive`), { method: 'POST' });
+}
+
+export function listKnowledge(id: string) {
+  return authRequest<KnowledgeDocument[]>(productPath(id, '/knowledge'));
+}
+
+export function uploadKnowledge(id: string, body: { fileName: string; contentBase64: string }) {
+  return authRequest<KnowledgeDocument>(productPath(id, '/knowledge'), { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function reviewKnowledge(id: string, documentId: string, action: 'approve' | 'reject', reason?: string) {
+  return authRequest<KnowledgeDocument>(productPath(id, `/knowledge/${documentId}/${action}`), {
+    method: 'POST',
+    body: JSON.stringify(action === 'reject' ? { reason } : {}),
+  });
+}
+
+export function searchKnowledge(id: string, body: { query: string; mode: 'keyword' | 'semantic' }) {
+  return authRequest<{ requestedMode: string; mode: string; semanticAvailable: boolean; results: Array<{ chunkId: string; documentId: string; fileName: string; page: number | null; section: string | null; content: string; score: number | null }> }>(
+    productPath(id, '/knowledge/search'),
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+}
+
+export function previewProductContext(id: string, body: { query: string; versionId?: string }) {
+  return authRequest<Record<string, unknown>>(productPath(id, '/context/preview'), { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function downloadKnowledge(id: string, documentId: string, fileName: string) {
+  const response = await fetch(authPath(productPath(id, `/knowledge/${documentId}/download`)), { credentials: 'include' });
+  if (!response.ok) throw new Error(`Download failed (${response.status})`);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}

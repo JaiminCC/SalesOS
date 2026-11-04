@@ -19,3 +19,12 @@ export type FoundationJobData = {
 export function foundationJobId(tenantId: string, outboxId: string): string {
   return `${tenantId}_${outboxId}`;
 }
+
+export const KNOWLEDGE_PROCESS_JOB = 'knowledge.process';
+export const KNOWLEDGE_PROCESS_EVENT = 'knowledge.document.process.v1';
+
+export type KnowledgeJobData = {
+  tenantId: string;
+  documentId: string;
+  outboxId: string;
+};

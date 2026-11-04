@@ -12,12 +12,33 @@ const schema = z.object({
   INTERNAL_JOB_TOKEN: z.string().min(16),
   SALESOS_QUEUE_PREFIX: z.string().default(''),
   MAIL_MODE: z.enum(['capture', 'disabled']).default('capture'),
+  SALESOS_STORAGE_ROOT: z.string().optional(),
+  SALESOS_KNOWLEDGE_MAX_BYTES: z.coerce.number().int().positive().max(20_000_000).default(5_242_880),
+  SALESOS_PROCESS_KNOWLEDGE: z.enum(['queue', 'inline']).default('queue'),
+  SALESOS_EMBEDDING_PROVIDER: z.enum(['disabled', 'test', 'http']).default('disabled'),
+  SALESOS_EMBEDDING_URL: z.string().optional(),
+  SALESOS_EMBEDDING_MODEL: z.string().default('configured-embedding'),
+  CI: z.string().optional(),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && value.MAIL_MODE === 'capture') {
     context.addIssue({
       code: 'custom',
       path: ['MAIL_MODE'],
       message: 'MAIL_MODE=capture is refused in production',
+    });
+  }
+  if (value.SALESOS_EMBEDDING_PROVIDER === 'http' && (value.NODE_ENV === 'test' || value.CI === 'true')) {
+    context.addIssue({
+      code: 'custom',
+      path: ['SALESOS_EMBEDDING_PROVIDER'],
+      message: 'Hosted embedding APIs are disabled when NODE_ENV=test or CI=true',
+    });
+  }
+  if (value.SALESOS_EMBEDDING_PROVIDER === 'http' && !value.SALESOS_EMBEDDING_URL) {
+    context.addIssue({
+      code: 'custom',
+      path: ['SALESOS_EMBEDDING_URL'],
+      message: 'SALESOS_EMBEDDING_URL is required for the http embedding provider',
     });
   }
 });

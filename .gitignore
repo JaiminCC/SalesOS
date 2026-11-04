@@ -11,6 +11,8 @@ coverage
 *.pfx
 tmp/
 .docker-data/
+data/
+.data/
 
 .env
 .env.local

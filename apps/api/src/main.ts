@@ -1,13 +1,16 @@
 import 'reflect-metadata';
 import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { AppConfig } from './config/app-config';
 import { logInfo } from './logging/logger';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: ['error', 'warn', 'log'], bodyParser: false });
+  app.useBodyParser('json', { limit: '12mb' });
+  app.useBodyParser('urlencoded', { limit: '12mb', extended: true });
   const config = app.get(AppConfig);
   app.enableShutdownHooks();
   app.setGlobalPrefix('api', {

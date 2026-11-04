@@ -1,12 +1,12 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { foundationQueueName, type FoundationJobData } from '@salesos/shared';
+import { foundationQueueName, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
 import { AppConfig } from '../config/app-config';
 
 @Injectable()
 export class FoundationQueue implements OnModuleDestroy {
-  readonly queue: Queue<FoundationJobData>;
+  readonly queue: Queue<FoundationJobData | KnowledgeJobData>;
   private readonly connection: IORedis;
 
   constructor(@Inject(AppConfig) config: AppConfig) {
@@ -16,7 +16,7 @@ export class FoundationQueue implements OnModuleDestroy {
       enableOfflineQueue: false,
     });
     this.connection.on('error', () => undefined);
-    this.queue = new Queue<FoundationJobData>(foundationQueueName(config.env.SALESOS_QUEUE_PREFIX), {
+    this.queue = new Queue<FoundationJobData | KnowledgeJobData>(foundationQueueName(config.env.SALESOS_QUEUE_PREFIX), {
       connection: this.connection,
     });
   }

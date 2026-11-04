@@ -8,6 +8,13 @@ export const TENANT_TABLES = [
   'idempotency_keys',
   'job_executions',
   'invitations',
+  'products',
+  'product_versions',
+  'knowledge_documents',
+  'knowledge_chunks',
+  'knowledge_embeddings',
+  'embedding_indexes',
+  'organization_product_defaults',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

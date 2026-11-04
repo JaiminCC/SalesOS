@@ -1,6 +1,6 @@
 import { Queue, UnrecoverableError, type Job } from 'bullmq';
 import { Prisma, withTenant, type PrismaClient } from '@salesos/database';
-import { FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, foundationJobId, type FoundationJobData } from '@salesos/shared';
+import { FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, foundationJobId, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
 
 type PendingOutbox = {
   tenant_id: string;
@@ -14,24 +14,22 @@ export async function listPendingOutbox(prisma: PrismaClient): Promise<PendingOu
   return prisma.$queryRaw<PendingOutbox[]>(Prisma.sql`SELECT * FROM public.list_pending_outbox(25)`);
 }
 
-export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData>): Promise<number> {
+export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData>): Promise<number> {
   const pending = await listPendingOutbox(prisma);
   let published = 0;
   for (const row of pending) {
-    if (row.event_type !== FOUNDATION_PING_EVENT) continue;
-    const data: FoundationJobData = {
-      tenantId: row.tenant_id,
-      jobExecutionId: row.aggregate_id,
-      outboxId: row.id,
-    };
+    const jobId = foundationJobId(row.tenant_id, row.id);
+    const options = { jobId, attempts: 5, backoff: { type: 'exponential' as const, delay: 200 }, removeOnComplete: 1000, removeOnFail: 1000 };
     try {
-      await queue.add(FOUNDATION_PING_JOB, data, {
-        jobId: foundationJobId(data.tenantId, data.outboxId),
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 200 },
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
-      });
+      if (row.event_type === FOUNDATION_PING_EVENT) {
+        const data: FoundationJobData = { tenantId: row.tenant_id, jobExecutionId: row.aggregate_id, outboxId: row.id };
+        await queue.add(FOUNDATION_PING_JOB, data, options);
+      } else if (row.event_type === KNOWLEDGE_PROCESS_EVENT) {
+        const data: KnowledgeJobData = { tenantId: row.tenant_id, documentId: row.aggregate_id, outboxId: row.id };
+        await queue.add(KNOWLEDGE_PROCESS_JOB, data, options);
+      } else {
+        continue;
+      }
       published += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -78,16 +76,18 @@ export async function processFoundationPing(job: Job<FoundationJobData>, prisma:
   });
 }
 
-export async function markFinalFailure(job: Job<FoundationJobData>, prisma: PrismaClient): Promise<void> {
+export async function markFinalFailure(job: Job<FoundationJobData | KnowledgeJobData>, prisma: PrismaClient): Promise<void> {
+  if (job.name !== FOUNDATION_PING_JOB || !('jobExecutionId' in job.data)) return;
+  const data = job.data as FoundationJobData;
   const max = job.opts.attempts ?? 1;
   if (job.attemptsMade < max) return;
-  await withTenant(prisma, job.data.tenantId, async (tx) => {
+  await withTenant(prisma, data.tenantId, async (tx) => {
     await tx.jobExecution.updateMany({
-      where: { tenantId: job.data.tenantId, id: job.data.jobExecutionId, status: { not: 'SUCCEEDED' } },
+      where: { tenantId: data.tenantId, id: data.jobExecutionId, status: { not: 'SUCCEEDED' } },
       data: { status: 'FAILED_FINAL', attempts: job.attemptsMade, errorCode: 'EXHAUSTED', finishedAt: new Date() },
     });
     await tx.outboxEvent.updateMany({
-      where: { tenantId: job.data.tenantId, id: job.data.outboxId, status: 'PENDING' },
+      where: { tenantId: data.tenantId, id: data.outboxId, status: 'PENDING' },
       data: { status: 'FAILED', processedAt: new Date() },
     });
   });

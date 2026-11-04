@@ -99,32 +99,27 @@ The prototype's boolean matrix becomes rows. Owner is a system role whose permis
 
 ### 3.2 Products, ICP, knowledge
 
-Preserved from `schema.sql`:
+Implemented by forward-only migration `20261104170000_products`. The earlier `SOFTWARE` / `SERVICE` / `HARDWARE` sketch is not the live schema. `CREATE EXTENSION vector` runs in that migration. There is no ANN index. Similarity is exact `vector <=>` cosine distance.
 
-- `products` `(tenant_id, id)`, `name`, `type` (`SOFTWARE`, `SERVICE`, `HARDWARE`, `OTHER`), `status`.
-- `product_versions` with `version`, `published`, `icp` JSONB, `approved_facts` JSONB, `qualification_schema` JSONB, `restrictions` JSONB. Unique `(tenant_id, product_id, version)`.
-- `knowledge_documents` with `sha256`, `storage_key`, `status` (`PENDING`, `APPROVED`, `REJECTED`, `REVOKED`), `approved_by`.
-- `knowledge_chunks` unique `(tenant_id, document_id, chunk_index)`.
+Every table below has composite primary key `(tenant_id, id)` except `embedding_indexes` and `organization_product_defaults`, which are one row per tenant. All seven have `ENABLE` and `FORCE ROW LEVEL SECURITY` and policy `tenant_isolation`: `tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid`. `salesos_app` and `salesos_worker` have `SELECT, INSERT, UPDATE, DELETE`. `salesos_identity` has `REVOKE ALL`. `salesos_outbox` has `SELECT` only on `knowledge_documents (tenant_id, id, status, retain_until, byte_size)`.
 
-ICP JSON shape (versioned, validated by Zod in `packages/shared`, not by a Code Colonies schema):
+| Table | Purpose |
+|---|---|
+| `products` | Catalog identity. `product_type` is `SOFTWARE`, `PHYSICAL`, `PROFESSIONAL_SERVICE`, `SUBSCRIPTION`, `DIGITAL`, `CUSTOM`, or `OTHER`. `status` is `ACTIVE` or `ARCHIVED`. Tags, markets, and languages are `text[]`. `currency` is `char(3)`. |
+| `product_versions` | Immutable published snapshots. Unique `(tenant_id, product_id, version_number)`. `status` is `DRAFT`, `IN_REVIEW`, `APPROVED`, `REJECTED`, `PUBLISHED`, `SUPERSEDED`, or `ARCHIVED`. `revision` is the optimistic concurrency token. `snapshot` JSON holds ICPs, positioning, pricing, and `knowledgeDocumentIds`. |
+| `knowledge_documents` | File metadata. Unique `(tenant_id, sha256)` until a deletion tombstone replaces the hash. Status moves through `UPLOAD`, `VALIDATING`, `PROCESSING`, `EXTRACTED`, `INDEXED`, `PENDING_APPROVAL`, `APPROVED`, `REJECTED`, `FAILED`, `DELETED`. |
+| `knowledge_chunks` | Normalized text with `chunk_index`, optional `page` and `section`. Unique `(tenant_id, document_id, chunk_index)`. |
+| `knowledge_embeddings` | `vector(384)` plus a check that `dimensions = 384`. Inserts use raw SQL, not Prisma `create`. |
+| `embedding_indexes` | One model and dimension pin per tenant. Status `ACTIVE`. A later provider that disagrees fails the document and writes no vector. |
+| `organization_product_defaults` | Organization positioning, pricing, and `knowledge_retention_days` (0..3650). This is a tenant table because `salesos_app` cannot read `tenants`. |
 
-```text
-{
-  "industries": [],
-  "employeeBands": [],
-  "geographies": [],          // ISO country codes
-  "buyerTitles": [],
-  "pains": [],
-  "exclusions": [],
-  "evidenceRequirements": []
-}
-```
+`product_versions_guard` is a `BEFORE UPDATE` trigger. The snapshot may change only when both statuses are `DRAFT`, or on `APPROVED` → `PUBLISHED` when the only JSON change is `knowledgeDocumentIds`. A published row may become `SUPERSEDED`. `SUPERSEDED` and `ARCHIVED` cannot change status. Identity columns cannot change.
 
-Qualification schema is an ordered field list: `key`, `label`, `type`, `requiredForSalesReady`. Scoring weights live here too, so "fit +24" is configuration, not a React constant.
+ICP, positioning, and pricing shapes are validated by Zod in `packages/shared/src/product.ts`. Countries are `^[A-Z]{2}$`. Languages are `^[a-z]{2}(-[A-Z]{2})?$`. Custom ICP attributes are a record of short strings to string, number, or boolean. There is no industry-specific ICP in code.
 
-Published versions are immutable. A publish copies the draft into a new version row with `published = true` and refuses updates. Drafts that cited a revoked knowledge document cannot be sent (FR-014).
+`list_due_knowledge_deletions(batch_size)` is `SECURITY DEFINER`, owned by `salesos_outbox`, `search_path = pg_catalog`. `EXECUTE` is granted only to `salesos_worker`. It returns tenant id and document id for rows that are `DELETED`, past `retain_until`, and still have `byte_size > 0`. It does not return content or storage keys.
 
-Embeddings are a later column or `knowledge_chunk_embeddings` table with `(tenant_id, chunk_id)` and RLS. MVP retrieval may be keyword over approved chunks. Vectors are not required to ship the first grounded draft, and they must not ship without the same tenant filter.
+Scoring weights and the ordered qualification field list from the earlier design are not stored yet. Qualification and discovery questions are string lists on the positioning snapshot. Lead scoring remains a later phase.
 
 ### 3.3 Workflows
 

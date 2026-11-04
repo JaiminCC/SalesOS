@@ -293,6 +293,7 @@ Phase 4 can start once Phase 2's tenant transaction helper exists. It should not
 
 ### T3.1 Products and immutable versions
 
+**Status:** Implemented in Sprint 3. See `docs/PRODUCT_CONFIGURATION.md` and `docs/PRODUCT_VERSIONING.md`.  
 **Depends on:** T2.4, T1.5.  
 **Acceptance criteria:**
 
@@ -306,12 +307,15 @@ Phase 4 can start once Phase 2's tenant transaction helper exists. It should not
 - Contract snapshot for create and publish.
 - E2E: add offering, reload, card remains.
 
+Sprint 3 uses the existing permission catalog. Document and version approval use `approvals.manage`. Publication uses `products.publish`. The Products screen reads and writes `/api/v1/products`. The simulated “Add offering” header button no longer opens a local-only form.
+
 ### T3.2 Knowledge ingestion
 
+**Status:** Implemented in Sprint 3. See `docs/KNOWLEDGE_INGESTION.md` and `docs/KNOWLEDGE_RETRIEVAL.md`.  
 **Depends on:** T3.1.  
 **Acceptance criteria:**
 
-- Upload stores bytes in object storage under `tenant/{tenantId}/...`, records sha256, and stays `PENDING` until a user with `products.publish` approves.
+- Upload stores bytes in object storage under `tenant/{tenantId}/knowledge/{documentId}`, records sha256, and stays `PENDING_APPROVAL` until a user with `approvals.manage` approves. `products.publish` is not the document-approval permission.
 - Chunking runs on the worker. Chunks carry `tenant_id`.
 - Retrieval function returns only approved chunks for the requested product version and tenant.
 
@@ -323,6 +327,7 @@ Phase 4 can start once Phase 2's tenant transaction helper exists. It should not
 
 ### T3.3 Remove company-specific control flow
 
+**Status:** The Sprint 3 backend does not branch on a company or product name. `docs/check_source.cjs` fails if `Code Colonies`, `Sales Automation`, `Privacy Operations`, or `Workflow Automation` appear under `apps/api/src`, `apps/worker/src`, `packages/shared/src`, `packages/agent-core/src`, or `packages/integrations/src`. Demo copy in `apps/web` may still contain those strings. Currency on a new product comes from the tenant record through the identity connection when the client omits it. Two products share `mergeProductContext` and the same retrieval function.  
 **Depends on:** T3.1, T2.6.  
 **Acceptance criteria:**
 
