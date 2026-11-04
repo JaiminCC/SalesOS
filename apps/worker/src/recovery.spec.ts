@@ -4,7 +4,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createPrismaClient, withTenant } from '@salesos/database';
-import { FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, FOUNDATION_QUEUE, foundationJobId } from '@salesos/shared';
+import { FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, foundationJobId, foundationQueueName } from '@salesos/shared';
 import { readWorkerHealth } from './health';
 import { processFoundationPing, publishPendingOutbox } from './processor';
 
@@ -23,7 +23,7 @@ describe.skipIf(!workerUrl || !redisUrl)('outbox recovery', () => {
 
   it('reports live postgres and redis health without opening an HTTP port', async () => {
     const health = await readWorkerHealth(prisma, redis);
-    expect(health).toEqual({ postgres: 'up', redis: 'up', queue: FOUNDATION_QUEUE });
+    expect(health).toEqual({ postgres: 'up', redis: 'up', queue: foundationQueueName(process.env.SALESOS_QUEUE_PREFIX) });
   });
 
   it('keeps a pending outbox row when Redis is unreachable, then publishes it once', async () => {
@@ -34,7 +34,7 @@ describe.skipIf(!workerUrl || !redisUrl)('outbox recovery', () => {
         data: {
           tenantId: tenantA,
           id: jobExecutionId,
-          queueName: FOUNDATION_QUEUE,
+          queueName: foundationQueueName(process.env.SALESOS_QUEUE_PREFIX),
           jobName: FOUNDATION_PING_JOB,
           idempotencyKey: `recover-${jobExecutionId}`,
           status: 'QUEUED',
@@ -61,7 +61,7 @@ describe.skipIf(!workerUrl || !redisUrl)('outbox recovery', () => {
       retryStrategy: () => null,
     });
     blocked.on('error', () => undefined);
-    const blockedQueue = new Queue(FOUNDATION_QUEUE, { connection: blocked });
+    const blockedQueue = new Queue(foundationQueueName(process.env.SALESOS_QUEUE_PREFIX), { connection: blocked });
     await expect(publishPendingOutbox(prisma, blockedQueue)).rejects.toThrow();
     const stillPending = await withTenant(prisma, tenantA, (tx) =>
       tx.outboxEvent.findUnique({ where: { tenantId_id: { tenantId: tenantA, id: outboxId } } }),
@@ -71,8 +71,8 @@ describe.skipIf(!workerUrl || !redisUrl)('outbox recovery', () => {
     blocked.disconnect();
 
     const workerRedis = redis.duplicate();
-    const queue = new Queue(FOUNDATION_QUEUE, { connection: redis });
-    const worker = new Worker(FOUNDATION_QUEUE, (job) => processFoundationPing(job, prisma), { connection: workerRedis });
+    const queue = new Queue(foundationQueueName(process.env.SALESOS_QUEUE_PREFIX), { connection: redis });
+    const worker = new Worker(foundationQueueName(process.env.SALESOS_QUEUE_PREFIX), (job) => processFoundationPing(job, prisma), { connection: workerRedis });
     try {
       await publishPendingOutbox(prisma, queue);
       let row: { status: string } | null = null;

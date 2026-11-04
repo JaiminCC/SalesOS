@@ -1,7 +1,7 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { FOUNDATION_QUEUE, type FoundationJobData } from '@salesos/shared';
+import { foundationQueueName, type FoundationJobData } from '@salesos/shared';
 import { AppConfig } from '../config/app-config';
 
 @Injectable()
@@ -16,7 +16,9 @@ export class FoundationQueue implements OnModuleDestroy {
       enableOfflineQueue: false,
     });
     this.connection.on('error', () => undefined);
-    this.queue = new Queue<FoundationJobData>(FOUNDATION_QUEUE, { connection: this.connection });
+    this.queue = new Queue<FoundationJobData>(foundationQueueName(config.env.SALESOS_QUEUE_PREFIX), {
+      connection: this.connection,
+    });
   }
 
   async onModuleDestroy(): Promise<void> {

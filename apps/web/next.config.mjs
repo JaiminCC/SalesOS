@@ -20,5 +20,12 @@ function loadEnvFile(path) {
 loadEnvFile(resolve(process.cwd(), '../../.env'));
 loadEnvFile(resolve(process.cwd(), '.env'));
 
-const nextConfig = { reactStrictMode: true };
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:3001';
+const nextConfig = {
+  reactStrictMode: true,
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [{ source: '/backend/:path*', destination: `${apiBase}/:path*` }];
+  },
+};
 export default nextConfig;

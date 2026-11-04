@@ -1,7 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { createPrismaClient } from '@salesos/database';
-import { FOUNDATION_PING_JOB, FOUNDATION_QUEUE, type FoundationJobData } from '@salesos/shared';
+import { FOUNDATION_PING_JOB, foundationQueueName, type FoundationJobData } from '@salesos/shared';
 import { parseWorkerEnv } from './env';
 import { readWorkerHealth } from './health';
 import { externalPorts } from './ports';
@@ -19,9 +19,10 @@ async function main(): Promise<void> {
   const workerConnection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
   queueConnection.on('error', () => undefined);
   workerConnection.on('error', () => undefined);
-  const queue = new Queue<FoundationJobData>(FOUNDATION_QUEUE, { connection: queueConnection });
+  const queueName = foundationQueueName(env.SALESOS_QUEUE_PREFIX);
+  const queue = new Queue<FoundationJobData>(queueName, { connection: queueConnection });
   const worker = new Worker<FoundationJobData>(
-    FOUNDATION_QUEUE,
+    queueName,
     async (job) => processFoundationPing(job, prisma),
     { connection: workerConnection, concurrency: 4 },
   );
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
     `${JSON.stringify({
       level: 'info',
       message: 'worker started',
-      queue: FOUNDATION_QUEUE,
+      queue: queueName,
       job: FOUNDATION_PING_JOB,
       mailbox: ports.mailbox.constructor.name,
       whatsapp: ports.whatsapp.constructor.name,

@@ -4,7 +4,7 @@ import { Prisma, withTenant } from '@salesos/database';
 import {
   FOUNDATION_PING_EVENT,
   FOUNDATION_PING_JOB,
-  FOUNDATION_QUEUE,
+  foundationQueueName,
   foundationJobId,
   type FoundationJobData,
   type FoundationPingMode,
@@ -58,7 +58,7 @@ export class JobsService {
         data: {
           tenantId: input.tenantId,
           id: jobExecutionId,
-          queueName: FOUNDATION_QUEUE,
+          queueName: foundationQueueName(process.env.SALESOS_QUEUE_PREFIX),
           jobName: FOUNDATION_PING_JOB,
           idempotencyKey: input.idempotencyKey,
           status: 'QUEUED',

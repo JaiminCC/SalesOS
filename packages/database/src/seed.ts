@@ -89,7 +89,7 @@ async function main(): Promise<void> {
             permission,
           })),
         });
-        if (roleName === 'Owner') {
+        if (roleName === 'Owner' || roleName === 'OWNER') {
           await prisma.membershipRole.upsert({
             where: {
               tenantId_userId_roleId: {

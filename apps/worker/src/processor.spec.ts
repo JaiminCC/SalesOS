@@ -3,7 +3,7 @@ import IORedis from 'ioredis';
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createPrismaClient, withTenant } from '@salesos/database';
-import { FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, FOUNDATION_QUEUE, foundationJobId, type FoundationJobData } from '@salesos/shared';
+import { FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, foundationJobId, foundationQueueName, type FoundationJobData } from '@salesos/shared';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { processFoundationPing } from './processor';
@@ -34,7 +34,7 @@ describe.skipIf(!process.env.DATABASE_URL_APP || !process.env.REDIS_URL)('founda
         data: {
           tenantId: tenantA,
           id: jobExecutionId,
-          queueName: FOUNDATION_QUEUE,
+          queueName: foundationQueueName(process.env.SALESOS_QUEUE_PREFIX),
           jobName: FOUNDATION_PING_JOB,
           idempotencyKey,
           status: 'QUEUED',
@@ -55,9 +55,9 @@ describe.skipIf(!process.env.DATABASE_URL_APP || !process.env.REDIS_URL)('founda
 
     const queueConnection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
     const workerConnection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
-    const queue = new Queue<FoundationJobData>(FOUNDATION_QUEUE, { connection: queueConnection });
+    const queue = new Queue<FoundationJobData>(foundationQueueName(process.env.SALESOS_QUEUE_PREFIX), { connection: queueConnection });
     const worker = new Worker<FoundationJobData>(
-      FOUNDATION_QUEUE,
+      foundationQueueName(process.env.SALESOS_QUEUE_PREFIX),
       (job) => processFoundationPing(job, prisma),
       { connection: workerConnection },
     );

@@ -21,4 +21,8 @@ tmp/
 packages/database/generated
 apps/web/next-env.d.ts
 apps/web/.next
+apps/web/test-results
+docs/verification/playwright-output
+docs/verification/playwright-report
+apps/docs/
 *.tsbuildinfo

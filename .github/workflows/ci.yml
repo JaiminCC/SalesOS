@@ -38,7 +38,6 @@ jobs:
       SALESOS_WORKER_PASSWORD: ci-worker-password
       DATABASE_URL_IDENTITY: postgresql://salesos_identity:ci-identity-password@127.0.0.1:5432/salesos
       SALESOS_IDENTITY_PASSWORD: ci-identity-password
-      MAIL_MODE: capture
       SALESOS_QUEUE_PREFIX: ci
       REDIS_URL: redis://127.0.0.1:6379
       DATA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
@@ -62,6 +61,25 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          MAIL_MODE: capture
       - run: pnpm check:source
       - run: pnpm --filter @salesos/web build
       - run: node scripts/check-audit.mjs
+      - run: pnpm --filter @salesos/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+        env:
+          MAIL_MODE: capture
+          SALESOS_QUEUE_PREFIX: playwright
+          CI: true
+      - name: Remove the Playwright database
+        if: always()
+        run: node apps/web/e2e/drop-e2e-database.mjs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failure
+          if-no-files-found: ignore
+          path: |
+            docs/verification/playwright-output/**
+            docs/verification/playwright-report/**

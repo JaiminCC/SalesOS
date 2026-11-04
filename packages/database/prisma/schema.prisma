@@ -27,6 +27,7 @@ model Tenant {
   outboxEvents    OutboxEvent[]
   idempotencyKeys IdempotencyKey[]
   jobExecutions   JobExecution[]
+  invitations     Invitation[]
 
   @@map("tenants")
 }
@@ -45,7 +46,8 @@ model User {
   memberships          Membership[]
   mfaFactors           MfaFactor[]
   recoveryCodes        RecoveryCode[]
-  passwordResetTokens  PasswordResetToken[]
+  passwordResetTokens    PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@map("users")
 }
@@ -60,6 +62,8 @@ model Session {
   userAgent         String?   @map("user_agent")
   ipHash            String?   @map("ip_hash")
   mfaSatisfied      Boolean   @default(false) @map("mfa_satisfied")
+  remember          Boolean   @default(false)
+  activeTenantId    String?   @map("active_tenant_id") @db.Uuid
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -102,6 +106,18 @@ model PasswordResetToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verification_tokens")
 }
 
 model AuthAttempt {
@@ -232,4 +248,46 @@ model JobExecution {
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, status, createdAt])
   @@map("job_executions")
+}
+
+model Invitation {
+  tenantId   String    @map("tenant_id") @db.Uuid
+  id         String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emailHmac  String    @map("email_hmac")
+  roleName   String    @map("role_name")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  acceptedAt DateTime? @map("accepted_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  invitedBy  String?   @map("invited_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@index([tenantId, emailHmac])
+  @@map("invitations")
+}
+
+model SecurityEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String
+  result    String
+  requestId String?  @map("request_id")
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@map("security_events")
+}
+
+model CapturedMessage {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind          String
+  recipientHmac String   @map("recipient_hmac")
+  token         String
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([recipientHmac, createdAt])
+  @@map("captured_messages")
 }

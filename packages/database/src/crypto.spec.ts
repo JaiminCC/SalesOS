@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeEncryptionKey, emailHmac, encryptField } from './crypto';
+import { decodeEncryptionKey, decryptField, emailHmac, encryptField } from './crypto';
 
 const key = Buffer.alloc(32, 7);
 
@@ -13,6 +13,11 @@ describe('field encryption', () => {
     const encrypted = encryptField(email, key);
     expect(encrypted.subarray(1 + 12 + 16).toString('utf8')).not.toContain(email);
     expect(encrypted[0]).toBe(1);
+  });
+
+  it('decrypts the ciphertext back to the email', () => {
+    const email = 'person@example.com';
+    expect(decryptField(encryptField(email, key), key)).toBe(email);
   });
 
   it('produces a stable hmac', () => {

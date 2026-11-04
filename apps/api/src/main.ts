@@ -28,7 +28,7 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: config.env.WEB_ORIGIN.split(',').map((origin) => origin.trim()),
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id', 'X-Salesos-Csrf'],
   });
   await app.listen(config.env.API_PORT, config.env.API_HOST);
   logInfo('api listening', { host: config.env.API_HOST, port: config.env.API_PORT });

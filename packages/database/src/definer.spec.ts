@@ -110,4 +110,36 @@ describe.skipIf(!adminUrl || !appUrl || !workerUrl)('security definer privileges
       await application.end();
     }
   });
+
+  it('keeps membership listing and invitation lookup off the application role', async () => {
+    const admin = new Client({ connectionString: adminUrl });
+    const application = new Client({ connectionString: appUrl });
+    await admin.connect();
+    await application.connect();
+    try {
+      const roles = await admin.query<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>(
+        `SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname IN ('salesos_identity', 'salesos_directory') ORDER BY rolname`,
+      );
+      expect(roles.rows).toEqual([
+        { rolname: 'salesos_directory', rolsuper: false, rolbypassrls: true },
+        { rolname: 'salesos_identity', rolsuper: false, rolbypassrls: false },
+      ]);
+      const functions = await admin.query<{ proname: string; owner: string; search_path: string }>(
+        `SELECT p.proname, pg_get_userbyid(p.proowner) AS owner,
+                (SELECT option FROM unnest(p.proconfig) AS option WHERE option LIKE 'search_path=%') AS search_path
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname IN ('list_user_memberships', 'lookup_invitation')
+         ORDER BY p.proname`,
+      );
+      expect(functions.rows).toEqual([
+        { proname: 'list_user_memberships', owner: 'salesos_directory', search_path: 'search_path=pg_catalog' },
+        { proname: 'lookup_invitation', owner: 'salesos_directory', search_path: 'search_path=pg_catalog' },
+      ]);
+      await expect(application.query('SELECT * FROM public.list_user_memberships($1::uuid)', [tenantA])).rejects.toThrow(/permission denied/i);
+      await expect(application.query('SELECT * FROM public.lookup_invitation($1)', ['not-a-token'])).rejects.toThrow(/permission denied/i);
+    } finally {
+      await admin.end();
+      await application.end();
+    }
+  });
 });

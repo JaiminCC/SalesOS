@@ -18,6 +18,7 @@
     "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml down",
     "check:source": "node docs/check_source.cjs",
+    "test:e2e": "pnpm --filter @salesos/web exec playwright test",
     "audit:exceptions": "node scripts/check-audit.mjs",
     "build:dependencies": "pnpm --filter \"@salesos/database^...\" build",
     "db:role": "pnpm --filter @salesos/database role",

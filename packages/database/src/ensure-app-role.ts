@@ -34,19 +34,22 @@ async function main(): Promise<void> {
   const databaseUrl = required('DATABASE_URL');
   const appPassword = required('SALESOS_APP_PASSWORD');
   const workerPassword = required('SALESOS_WORKER_PASSWORD');
+  const identityPassword = required('SALESOS_IDENTITY_PASSWORD');
   const databaseName = new URL(databaseUrl).pathname.replace(/^\//, '');
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
     await ensureLoginRole(client, 'salesos_app', appPassword);
     await ensureLoginRole(client, 'salesos_worker', workerPassword);
+    await ensureLoginRole(client, 'salesos_identity', identityPassword);
     const database = quoteIdent(databaseName);
     await client.query(`GRANT CONNECT ON DATABASE ${database} TO salesos_app`);
     await client.query(`GRANT CONNECT ON DATABASE ${database} TO salesos_worker`);
+    await client.query(`GRANT CONNECT ON DATABASE ${database} TO salesos_identity`);
   } finally {
     await client.end();
   }
-  process.stdout.write('salesos_app and salesos_worker roles are ready\n');
+  process.stdout.write('salesos_app, salesos_worker, and salesos_identity roles are ready\n');
 }
 
 main().catch((error: unknown) => {

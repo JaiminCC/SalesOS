@@ -1,4 +1,9 @@
 export const FOUNDATION_QUEUE = 'foundation';
+
+export function foundationQueueName(prefix = ''): string {
+  const cleaned = prefix.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+  return cleaned ? `${cleaned}_foundation` : FOUNDATION_QUEUE;
+}
 export const FOUNDATION_PING_JOB = 'foundation.ping';
 export const FOUNDATION_PING_EVENT = 'job.foundation_ping.v1';
 

@@ -1,0 +1,249 @@
+openapi: 3.0.3
+info:
+  title: SalesOS identity API
+  version: 0.2.0
+  description: |
+    Sprint 2 authentication, organization, and permission endpoints.
+    Session cookies are HttpOnly. Mutating requests that already carry
+    salesos_session must send X-Salesos-Csrf: 1 and an allowed Origin.
+servers:
+  - url: http://127.0.0.1:3001
+paths:
+  /api/v1/auth/register:
+    post:
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '202':
+          description: Accepted. The response does not reveal whether the email already exists.
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Sets salesos_session and returns the session profile.
+        '401':
+          description: INVALID_CREDENTIALS
+        '429':
+          description: AUTH_THROTTLED
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      responses:
+        '204':
+          description: Revokes the presented session and clears the cookie.
+  /api/v1/auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      responses:
+        '202':
+          description: Always accepted. A capture-mode message is stored only for an active account.
+  /api/v1/auth/reset-password:
+    post:
+      operationId: resetPassword
+      responses:
+        '204':
+          description: Password replaced and existing sessions revoked.
+        '400':
+          description: TOKEN_INVALID, TOKEN_EXPIRED, or TOKEN_USED
+  /api/v1/auth/verify-email:
+    post:
+      operationId: verifyEmail
+      responses:
+        '204':
+          description: Account becomes ACTIVE.
+        '400':
+          description: TOKEN_INVALID, TOKEN_EXPIRED, or TOKEN_USED
+  /api/v1/auth/me:
+    get:
+      operationId: currentSession
+      responses:
+        '200':
+          description: Current user, organization, roles, and permissions.
+        '401':
+          description: UNAUTHORIZED
+  /api/v1/auth/me/permissions:
+    get:
+      operationId: currentPermissions
+      responses:
+        '200':
+          description: Permissions for the active organization.
+  /api/v1/auth/sessions:
+    get:
+      operationId: listSessions
+      responses:
+        '200':
+          description: Active sessions for the signed-in user. Tokens are not returned.
+  /api/v1/auth/sessions/{id}:
+    delete:
+      operationId: revokeSession
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '204':
+          description: Session revoked.
+  /api/v1/organizations:
+    get:
+      operationId: listOrganizations
+      responses:
+        '200':
+          description: Organizations returned by the authenticated membership lookup.
+    post:
+      operationId: createOrganization
+      responses:
+        '201':
+          description: Organization created and selected on the current session.
+  /api/v1/organizations/{id}:
+    get:
+      operationId: getOrganization
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Organization details for an active member.
+        '403':
+          description: FORBIDDEN
+    patch:
+      operationId: updateOrganization
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Requires organizations.manage and the active organization.
+  /api/v1/organizations/{id}/switch:
+    post:
+      operationId: switchOrganization
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '204':
+          description: Sets the session active organization after membership and tenant status checks.
+  /api/v1/organizations/{id}/invitations:
+    post:
+      operationId: createInvitation
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '202':
+          description: Requires users.invite. The token is captured locally and is not returned.
+  /api/v1/invitations/accept:
+    post:
+      operationId: acceptInvitation
+      responses:
+        '200':
+          description: Adds an active membership when the signed-in email matches.
+        '400':
+          description: TOKEN_INVALID, TOKEN_EXPIRED, or TOKEN_USED
+  /api/v1/organizations/{id}/members:
+    get:
+      operationId: listMembers
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Members of the active organization.
+  /api/v1/organizations/{id}/members/{userId}:
+    patch:
+      operationId: updateMemberRole
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Requires roles.manage. The target role cannot exceed the actor.
+    delete:
+      operationId: removeMember
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Requires users.manage. The last owner cannot be removed.
+  /api/v1/organizations/{id}/owner-transfer:
+    post:
+      operationId: transferOwner
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '204':
+          description: Owner confirms with the current password. Sessions for both users are revoked.
+  /api/v1/organizations/{id}/audit:
+    get:
+      operationId: listAudit
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Requires audit.read. Payloads contain request ids only.
+  /api/v1/roles:
+    get:
+      operationId: listRoles
+      responses:
+        '200':
+          description: Roles and stored permission grants for the active organization. Requires a live membership. Legacy roles appear only when that organization has them.
+  /api/v1/permissions:
+    get:
+      operationId: listPermissions
+      responses:
+        '200':
+          description: Permission catalog for the active organization. Requires a live membership. The catalog is not a grant.
+components:
+  parameters:
+    OrganizationId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, displayName, organizationName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+        displayName:
+          type: string
+        organizationName:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        remember:
+          type: boolean

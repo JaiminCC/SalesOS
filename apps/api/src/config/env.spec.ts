@@ -3,6 +3,8 @@ import { parseApiEnv } from './env';
 
 const valid = {
   DATABASE_URL_APP: 'postgresql://salesos_app:password@127.0.0.1:5432/salesos',
+  DATABASE_URL_IDENTITY: 'postgresql://salesos_identity:password@127.0.0.1:5432/salesos',
+  DATA_ENCRYPTION_KEY: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
   REDIS_URL: 'redis://:password@127.0.0.1:6379',
   WEB_ORIGIN: 'http://localhost:3000',
   INTERNAL_JOB_TOKEN: 'change-me-internal-job-token',
@@ -19,5 +21,9 @@ describe('parseApiEnv', () => {
 
   it('rejects a short internal token', () => {
     expect(() => parseApiEnv({ ...valid, INTERNAL_JOB_TOKEN: 'short' })).toThrow();
+  });
+
+  it('refuses mail capture in production', () => {
+    expect(() => parseApiEnv({ ...valid, NODE_ENV: 'production', MAIL_MODE: 'capture' })).toThrow(/capture/);
   });
 });

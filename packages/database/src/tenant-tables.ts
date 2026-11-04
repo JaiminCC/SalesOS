@@ -7,6 +7,7 @@ export const TENANT_TABLES = [
   'outbox_events',
   'idempotency_keys',
   'job_executions',
+  'invitations',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

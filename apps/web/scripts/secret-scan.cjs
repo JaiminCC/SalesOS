@@ -15,7 +15,8 @@ const hits = [];
 
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === 'scripts') continue;
+    // e2e is Playwright running in Node. It is not part of the browser bundle.
+    if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === 'scripts' || entry.name === 'e2e') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full);
     else if (allowedSuffixes.has(path.extname(entry.name))) {

@@ -1,11 +1,11 @@
 import type { PrismaClient } from '@salesos/database';
 import type { Redis } from 'ioredis';
-import { FOUNDATION_QUEUE } from '@salesos/shared';
+import { foundationQueueName } from '@salesos/shared';
 
 export type WorkerHealth = {
   postgres: 'up' | 'down';
   redis: 'up' | 'down';
-  queue: typeof FOUNDATION_QUEUE;
+  queue: string;
 };
 
 export async function readWorkerHealth(prisma: PrismaClient, redis: Redis): Promise<WorkerHealth> {
@@ -17,5 +17,5 @@ export async function readWorkerHealth(prisma: PrismaClient, redis: Redis): Prom
     (reply) => (reply === 'PONG' ? 'up' as const : 'down' as const),
     () => 'down' as const,
   );
-  return { postgres, redis: redisStatus, queue: FOUNDATION_QUEUE };
+  return { postgres, redis: redisStatus, queue: foundationQueueName(process.env.SALESOS_QUEUE_PREFIX) };
 }
