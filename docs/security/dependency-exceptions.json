@@ -1,0 +1,56 @@
+{
+  "reviewedOn": "2026-11-04",
+  "note": "Reviewed after pnpm audit on the Sprint 1 lockfile. Production multer is overridden to 2.5.0 and direct Zod is 4.6.7. The entries below have no compatible patch inside the current Next 15.5.29, Vitest 3, Prisma 6, or ESLint 9 lines.",
+  "advisories": [
+    {
+      "id": "GHSA-qx2v-qp2m-jg93",
+      "package": "postcss",
+      "reason": "Nested postcss@8.4.31 inside next@15.5.29. Direct postcss is 8.5.32. Do not force-upgrade Next to 16."
+    },
+    {
+      "id": "GHSA-6g55-p6wh-862q",
+      "package": "postcss",
+      "reason": "Nested postcss@8.4.31 inside next@15.5.29."
+    },
+    {
+      "id": "GHSA-fxqj-rqcc-2cmp",
+      "package": "postcss",
+      "reason": "Nested postcss@8.4.31 inside next@15.5.29."
+    },
+    {
+      "id": "GHSA-r28c-9q8g-f849",
+      "package": "postcss",
+      "reason": "Nested postcss@8.4.31 inside next@15.5.29."
+    },
+    {
+      "id": "GHSA-5gmw-xhrv-c9v3",
+      "package": "tinypool",
+      "reason": "Vitest 3.2.7 depends on tinypool 1.1.1. The patched line is 2.1.2, which Vitest 3 does not use. Dev-only test runner."
+    },
+    {
+      "id": "GHSA-85c8-ppgw-ccpr",
+      "package": "tinypool",
+      "reason": "Same Vitest 3 pin as GHSA-5gmw-xhrv-c9v3. Not used by the API or worker runtime."
+    },
+    {
+      "id": "GHSA-82fw-gwwq-j7x9",
+      "package": "vitest",
+      "reason": "Fixed in Vitest 4.1.11. Sprint 1 stays on Vitest 3 so the current suite remains the verified runner."
+    },
+    {
+      "id": "GHSA-qxg6-89mg-rqv8",
+      "package": "@vitest/mocker",
+      "reason": "Fixed in Vitest 4.1.12. Dev-only, same hold as GHSA-82fw-gwwq-j7x9."
+    },
+    {
+      "id": "GHSA-ggr8-5vv4-36mx",
+      "package": "deepmerge-ts",
+      "reason": "@prisma/config@6.19.3 depends on deepmerge-ts 7.1.5. The fix is 8.x and is owned by the Prisma CLI, not application runtime."
+    },
+    {
+      "id": "GHSA-g3hv-75wg-m249",
+      "package": "minimatch",
+      "reason": "ESLint 9 depends on minimatch 3.x and 10.x. The patched release is 11.x. Dev-only lint toolchain."
+    }
+  ]
+}

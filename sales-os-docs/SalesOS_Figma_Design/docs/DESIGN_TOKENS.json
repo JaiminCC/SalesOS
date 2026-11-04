@@ -1,0 +1,43 @@
+{
+  "colors": {
+    "navy": "#11132C",
+    "navy2": "#1D2043",
+    "purple": "#6448EE",
+    "purple2": "#8B76FF",
+    "lilac": "#EFECFF",
+    "paper": "#F7F8FC",
+    "white": "#FFFFFF",
+    "ink": "#1D2340",
+    "muted": "#71809C",
+    "line": "#E3E7F2",
+    "green": "#0E9D75",
+    "mint": "#E4F8F0",
+    "amber": "#B8760B",
+    "warm": "#FFF4DD",
+    "red": "#D24C65",
+    "pink": "#FDEBF0",
+    "blue": "#3776DC",
+    "softblue": "#EBF3FF"
+  },
+  "typography": {
+    "family": "Inter",
+    "display": 32,
+    "heading": 22,
+    "body": 13,
+    "caption": 11
+  },
+  "spacing_base": 4,
+  "radii": {
+    "card": 16,
+    "button": 10,
+    "chip": 12
+  },
+  "desktop": {
+    "width": 1440,
+    "height": 900
+  },
+  "mobile": {
+    "width": 390,
+    "height": 844
+  }
+}

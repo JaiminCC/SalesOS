@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: salesos
+          POSTGRES_PASSWORD: ci-postgres-password
+          POSTGRES_DB: salesos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U salesos -d salesos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://salesos:ci-postgres-password@127.0.0.1:5432/salesos
+      DATABASE_URL_APP: postgresql://salesos_app:ci-app-password@127.0.0.1:5432/salesos
+      SALESOS_APP_PASSWORD: ci-app-password
+      REDIS_URL: redis://127.0.0.1:6379
+      DATA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      INTERNAL_JOB_TOKEN: ci-internal-job-token
+      WEB_ORIGIN: http://127.0.0.1:3000
+      API_HOST: 127.0.0.1
+      API_PORT: 3001
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:3001
+      NEXT_PUBLIC_DATA_SOURCE: demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:setup
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm --filter @salesos/web build
+      - run: node scripts/check-audit.mjs

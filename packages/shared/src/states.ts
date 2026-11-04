@@ -1,0 +1,113 @@
+export const LEAD_STATES = [
+  'DISCOVERED',
+  'RESEARCHED',
+  'ELIGIBLE',
+  'DRAFTED',
+  'APPROVAL_PENDING',
+  'CONTACTED',
+  'ENGAGED',
+  'QUALIFYING',
+  'SALES_READY',
+  'MEETING_REQUESTED',
+  'MEETING_BOOKED',
+  'HANDOFF',
+  'WON',
+  'LOST',
+  'SUPPRESSED',
+  'DISQUALIFIED',
+  'ARCHIVED',
+  'BOUNCED',
+  'HUMAN_OWNED',
+] as const;
+
+export type LeadState = (typeof LEAD_STATES)[number];
+
+export const AGENT_ACTION_STATES = [
+  'PROPOSED',
+  'POLICY_CHECKED',
+  'BLOCKED',
+  'NEEDS_APPROVAL',
+  'READY',
+  'RUNNING',
+  'SUCCEEDED',
+  'FAILED_RETRYABLE',
+  'FAILED_FINAL',
+  'CANCELLED',
+  'EXPIRED',
+  'PAUSED',
+] as const;
+
+export type AgentActionState = (typeof AGENT_ACTION_STATES)[number];
+
+export const JOB_EXECUTION_STATES = [
+  'QUEUED',
+  'RUNNING',
+  'SUCCEEDED',
+  'FAILED_RETRYABLE',
+  'FAILED_FINAL',
+] as const;
+
+export type JobExecutionState = (typeof JOB_EXECUTION_STATES)[number];
+
+const PRE_HANDOFF = new Set<LeadState>([
+  'DISCOVERED',
+  'RESEARCHED',
+  'ELIGIBLE',
+  'DRAFTED',
+  'APPROVAL_PENDING',
+  'CONTACTED',
+  'ENGAGED',
+  'QUALIFYING',
+  'SALES_READY',
+  'MEETING_REQUESTED',
+  'MEETING_BOOKED',
+]);
+
+const LEAD_EDGES: Record<LeadState, readonly LeadState[]> = {
+  DISCOVERED: ['RESEARCHED', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  RESEARCHED: ['ELIGIBLE', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  ELIGIBLE: ['DRAFTED', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  DRAFTED: ['APPROVAL_PENDING', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  APPROVAL_PENDING: ['CONTACTED', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  CONTACTED: ['ENGAGED', 'BOUNCED', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  ENGAGED: ['QUALIFYING', 'HUMAN_OWNED', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  QUALIFYING: ['SALES_READY', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  SALES_READY: ['MEETING_REQUESTED', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  MEETING_REQUESTED: ['MEETING_BOOKED', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  MEETING_BOOKED: ['HANDOFF', 'SUPPRESSED', 'DISQUALIFIED', 'ARCHIVED'],
+  HANDOFF: ['WON', 'LOST'],
+  WON: [],
+  LOST: [],
+  SUPPRESSED: [],
+  DISQUALIFIED: [],
+  ARCHIVED: [],
+  BOUNCED: [],
+  HUMAN_OWNED: ['QUALIFYING'],
+};
+
+export function canTransitionLead(from: LeadState, to: LeadState): boolean {
+  return LEAD_EDGES[from].includes(to);
+}
+
+export function isPreHandoffLead(state: LeadState): boolean {
+  return PRE_HANDOFF.has(state);
+}
+
+const ACTION_EDGES: Record<AgentActionState, readonly AgentActionState[]> = {
+  PROPOSED: ['POLICY_CHECKED', 'CANCELLED', 'EXPIRED', 'PAUSED'],
+  POLICY_CHECKED: ['BLOCKED', 'NEEDS_APPROVAL', 'READY', 'CANCELLED', 'PAUSED'],
+  BLOCKED: [],
+  NEEDS_APPROVAL: ['READY', 'CANCELLED', 'EXPIRED', 'PAUSED'],
+  READY: ['RUNNING', 'CANCELLED', 'EXPIRED', 'PAUSED'],
+  RUNNING: ['SUCCEEDED', 'FAILED_RETRYABLE', 'FAILED_FINAL', 'CANCELLED', 'PAUSED'],
+  SUCCEEDED: [],
+  FAILED_RETRYABLE: ['RUNNING', 'FAILED_FINAL', 'CANCELLED'],
+  FAILED_FINAL: [],
+  CANCELLED: [],
+  EXPIRED: [],
+  PAUSED: ['READY', 'CANCELLED'],
+};
+
+export function canTransitionAction(from: AgentActionState, to: AgentActionState): boolean {
+  return ACTION_EDGES[from].includes(to);
+}

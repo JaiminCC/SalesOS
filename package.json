@@ -1,0 +1,40 @@
+{
+  "name": "salesos",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @salesos/web dev",
+    "dev:web": "pnpm --filter @salesos/web dev",
+    "dev:api": "pnpm --filter @salesos/api dev",
+    "dev:worker": "pnpm --filter @salesos/worker dev",
+    "build": "pnpm db:generate && pnpm -r --if-present build",
+    "lint": "eslint .",
+    "typecheck": "pnpm db:generate && pnpm --filter \"./packages/*\" build && pnpm -r --if-present typecheck",
+    "test": "pnpm db:generate && pnpm --filter \"./packages/*\" build && pnpm --filter @salesos/shared --filter @salesos/agent-core --filter @salesos/integrations test && pnpm --filter @salesos/database --filter @salesos/api --filter @salesos/worker --workspace-concurrency=1 test && pnpm --filter @salesos/web test",
+    "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml down",
+    "check:source": "node docs/check_source.cjs",
+    "audit:exceptions": "node scripts/check-audit.mjs",
+    "db:role": "pnpm --filter @salesos/database role",
+    "db:generate": "pnpm --filter @salesos/database generate",
+    "db:migrate": "pnpm --filter @salesos/database migrate",
+    "db:seed": "pnpm --filter @salesos/database seed",
+    "db:setup": "pnpm db:generate && pnpm db:role && pnpm db:migrate && pnpm db:seed"
+  },
+  "pnpm": {
+    "overrides": {
+      "multer": "2.5.0"
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "globals": "^17.14.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4"
+  }
+}

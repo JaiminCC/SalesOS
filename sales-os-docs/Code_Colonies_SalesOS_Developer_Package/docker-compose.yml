@@ -1,0 +1,50 @@
+# REFERENCE ONLY - DEVELOPMENT/STAGING; not secure production configuration.
+# Production must use managed secret files, reverse proxy TLS, backups, non-root images,
+# pin image digests, network controls, monitoring and no published DB/Redis ports.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: salesos
+      POSTGRES_USER: salesos_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U salesos_dev -d salesos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [private]
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?required}"]
+    volumes: ["redisdata:/data"]
+    networks: [private]
+  api:
+    build: {context: ., dockerfile: apps/api/Dockerfile}
+    env_file: [.env]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    expose: ["3001"]
+    networks: [private, edge]
+  worker:
+    build: {context: ., dockerfile: apps/worker/Dockerfile}
+    env_file: [.env]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    networks: [private]
+  web:
+    build: {context: ., dockerfile: apps/web/Dockerfile}
+    env_file: [.env]
+    expose: ["3000"]
+    depends_on: [api]
+    networks: [edge]
+volumes:
+  pgdata: {}
+  redisdata: {}
+networks:
+  private: {internal: true}
+  edge: {}

@@ -1,0 +1,223 @@
+openapi: 3.1.0
+info:
+  title: Code Colonies SalesOS API
+  version: 1.0.0-mvp
+  description: Reference contract; API implementation must produce matching generated OpenAPI, with DTO validation and RBAC.
+servers:
+  - url: https://salesos.example.com/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /me:
+    get:
+      operationId: getCurrentUser
+      summary: Current identity and tenant memberships
+      responses:
+        '200': {description: Authenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ApiEnvelope'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /tenants/{tenantId}/products:
+    post:
+      operationId: createProduct
+      summary: Create tenant-scoped product
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateProduct'}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/ApiEnvelope'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /tenants/{tenantId}/campaigns:
+    post:
+      operationId: createCampaign
+      summary: Create draft campaign
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateCampaign'}
+      responses:
+        '201': {description: Created}
+        '422': {description: Invalid configuration or policy}
+  /tenants/{tenantId}/campaigns/{campaignId}/activate:
+    post:
+      operationId: activateCampaign
+      summary: Activate only after policy validation
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {name: campaignId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Activated}, '409': {description: Invalid state}, '422': {description: Policy failure}}
+  /tenants/{tenantId}/leads/{leadId}/drafts:
+    post:
+      operationId: draftOutreach
+      summary: Generate grounded first-contact draft; no send
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {name: leadId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'202': {description: Draft job accepted}, '422': {description: Insufficient evidence}}
+  /tenants/{tenantId}/drafts/{draftId}/approve:
+    post:
+      operationId: approveDraft
+      summary: Approve current draft version; changes invalidate approval
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {name: draftId, in: path, required: true, schema: {type: string, format: uuid}}, {name: If-Match, in: header, required: true, schema: {type: string}}]
+      responses: {'200': {description: Approved}, '409': {description: Version conflict}, '422': {description: Violates policy}}
+  /tenants/{tenantId}/drafts/{draftId}/send:
+    post:
+      operationId: enqueueApprovedSend
+      summary: Recheck DNC, legality, cap and approval at dispatch
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {$ref: '#/components/parameters/IdempotencyKey'}, {name: draftId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'202': {description: Queued}, '409': {description: Not approved}, '422': {description: Suppressed or ineligible}}
+  /tenants/{tenantId}/conversations/{conversationId}/takeover:
+    post:
+      operationId: humanTakeover
+      summary: Stop automatic replies and assign human
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {name: conversationId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Human-owned conversation}}
+  /tenants/{tenantId}/suppression:
+    post:
+      operationId: addSuppression
+      summary: Immediately block future marketing to recipient
+      parameters: [{$ref: '#/components/parameters/TenantId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SuppressionRequest'}}}
+      responses: {'201': {description: Suppressed}}
+  /tenants/{tenantId}/meetings/book:
+    post:
+      operationId: bookMeeting
+      summary: Book only after buyer-approved slot and availability recheck
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MeetingBooking'}}}
+      responses: {'201': {description: Provider-confirmed meeting}, '409': {description: Slot no longer available}, '503': {description: Calendar unavailable}}
+  /integrations/email/{connectorId}/webhook:
+    post:
+      operationId: receiveEmailWebhook
+      security: []
+      summary: Signed provider callback; verify signature and deduplicate event before processing
+      parameters: [{name: connectorId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'202': {description: Event queued}, '401': {description: Invalid provider signature}}
+  /tenants/{tenantId}/supervisor/briefing:
+    get:
+      operationId: getSupervisorBriefing
+      summary: Read prioritized sales activity and agent follow-up alerts
+      parameters: [{$ref: '#/components/parameters/TenantId'}]
+      responses: {'200': {description: Tenant-scoped briefing}, '403': {description: Forbidden}}
+  /tenants/{tenantId}/supervisor/scan:
+    post:
+      operationId: triggerSupervisorScan
+      summary: Enqueue idempotent reconciliation of sales activity
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'202': {description: Scan queued}, '403': {description: Forbidden}}
+  /tenants/{tenantId}/automation/pause:
+    post:
+      operationId: pauseAutomations
+      summary: Block future external side effects immediately
+      parameters: [{$ref: '#/components/parameters/TenantId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'200': {description: Automations paused}, '403': {description: Forbidden}}
+  /tenants/{tenantId}/agent-actions/{actionId}/approve:
+    post:
+      operationId: approveAgentAction
+      summary: Review and authorize a policy-eligible pending action
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {name: actionId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses: {'200': {description: Action approved pending fresh send-time policy check}, '409': {description: Stale action or approval}}
+  /tenants/{tenantId}/meetings/{meetingId}/artifacts:
+    post:
+      operationId: registerMeetingArtifact
+      summary: Ingest authorized transcript metadata using trusted storage workflow
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {name: meetingId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MeetingArtifactRegistration'}}}
+      responses: {'202': {description: Transcript validation queued}, '422': {description: Authorization or artifact validation failed}}
+  /tenants/{tenantId}/meetings/{meetingId}/summarize:
+    post:
+      operationId: summarizeMeeting
+      summary: Create structured source-anchored notes from authorized transcript
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {name: meetingId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses: {'202': {description: Summary queued}, '409': {description: Transcript unavailable or not authorized}}
+  /tenants/{tenantId}/meetings/{meetingId}/notes:
+    get:
+      operationId: listMeetingNotes
+      summary: Read transcript-backed meeting notes and reviewer status
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {name: meetingId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Notes and action items}, '403': {description: Forbidden}}
+  /tenants/{tenantId}/tasks:
+    get:
+      operationId: listSalesTasks
+      summary: Sales follow-ups and outstanding commitments
+      parameters: [{$ref: '#/components/parameters/TenantId'}]
+      responses: {'200': {description: Tenant-scoped tasks}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    TenantId: {name: tenantId, in: path, required: true, schema: {type: string, format: uuid}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
+  responses:
+    Unauthorized: {description: Sign-in required}
+    Forbidden: {description: Not authorized within this tenant/resource}
+  schemas:
+    ApiEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, additionalProperties: true}
+        meta: {type: object, properties: {requestId: {type: string}}}
+    CreateProduct:
+      type: object
+      additionalProperties: false
+      required: [name, type]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 120}
+        type: {type: string, enum: [B2B_SAAS, B2C, SERVICE, HARDWARE, OTHER]}
+    CreateCampaign:
+      type: object
+      additionalProperties: false
+      required: [name, productVersionIds, markets, channel, approvalMode, dailySendCap, timezone]
+      properties:
+        name: {type: string, minLength: 3}
+        productVersionIds: {type: array, minItems: 1, items: {type: string, format: uuid}}
+        markets: {type: array, minItems: 1, items: {type: string, minLength: 2, maxLength: 2}}
+        channel: {type: string, enum: [EMAIL]}
+        approvalMode: {type: string, enum: [FIRST_CONTACT_REQUIRED, ALL_OUTBOUND_REQUIRED]}
+        dailySendCap: {type: integer, minimum: 0, maximum: 1000}
+        timezone: {type: string, example: Asia/Kolkata}
+    SuppressionRequest:
+      type: object
+      additionalProperties: false
+      required: [contactReference, reason]
+      properties:
+        contactReference: {type: string, description: Email/contact ID resolved and HMAC'd server-side}
+        reason: {type: string, enum: [OPTOUT, COMPLAINT, HARD_BOUNCE, MANUAL, LEGAL]}
+    MeetingArtifactRegistration:
+      type: object
+      additionalProperties: false
+      required: [type, source, uploadToken, consentAttested, sha256]
+      properties:
+        type: {type: string, enum: [TRANSCRIPT, PROVIDER_NOTES]}
+        source: {type: string, enum: [AUTHORIZED_UPLOAD, PROVIDER_EXPORT]}
+        uploadToken: {type: string, description: Opaque identifier from server-issued scoped upload}
+        consentAttested: {type: boolean, const: true}
+        consentEvidence: {type: string, maxLength: 500}
+        sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+        retentionDays: {type: integer, minimum: 1, maximum: 365}
+    MeetingBooking:
+      type: object
+      additionalProperties: false
+      required: [conversationId, candidateSlotId, buyerConfirmationMessageId]
+      properties:
+        conversationId: {type: string, format: uuid}
+        candidateSlotId: {type: string}
+        buyerConfirmationMessageId: {type: string, format: uuid}
+

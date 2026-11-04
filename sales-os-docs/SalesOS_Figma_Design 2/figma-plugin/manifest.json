@@ -1,0 +1,8 @@
+{
+  "name": "Code Colonies SalesOS \u2014 Editable Design Generator",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": [
+    "figma"
+  ]
+}

@@ -1,0 +1,50 @@
+# SalesOS Screen Register
+
+- **A01 · Sign in to SalesOS** — 01 · Identity & Access: Secure access to your autonomous sales workspace
+- **A02 · Forgot password** — 01 · Identity & Access: Request a time-limited account recovery link
+- **A03 · Reset password** — 01 · Identity & Access: Choose a new password for this workspace
+- **A04 · Multi-factor verification** — 01 · Identity & Access: Confirm your sign-in using an approved factor
+- **A05 · Choose your organization** — 01 · Identity & Access: Continue with enterprise single sign-on
+- **A06 · New workspace setup** — 01 · Identity & Access: Configure company identity and initial preferences
+- **C01 · AI Command Center** — 02 · Core Sales: Everything your autonomous sales team is doing right now
+- **C02 · Lead Discovery** — 02 · Core Sales: Find relevant companies using authorized sources and verified signals
+- **C03 · Lead Research & Profile** — 02 · Core Sales: Evidence, buyer profile, product fit and complete activity history
+- **C04 · Campaign Builder** — 02 · Core Sales: Launch product-independent AI-assisted prospecting campaigns
+- **C05 · AI Inbox & Conversations** — 02 · Core Sales: Human-readable context for every autonomous interaction
+- **C06 · Qualification Workspace** — 02 · Core Sales: Score intent using explicit requirements and source evidence
+- **C07 · Meeting Calendar** — 02 · Core Sales: Coordinate verified availability and consented bookings
+- **C08 · Meeting Intelligence** — 02 · Core Sales: Authorized transcripts, concise summaries and actionable follow-ups
+- **C09 · Approval Center** — 02 · Core Sales: Review high-impact actions before they execute
+- **C10 · Sales Pipeline** — 02 · Core Sales: Track commercial outcomes with ownership and next actions
+- **C11 · Analytics & Revenue Insights** — 02 · Core Sales: Understand conversion, lead quality and AI contribution
+- **C12 · Products & Knowledge** — 02 · Core Sales: Sell any configured product, service or solution
+- **G01 · AI Sales Supervisor** — 03 · Agent Operations: Orchestrates goals, tasks, policy checks and exception recovery
+- **G02 · Research Agent** — 03 · Agent Operations: Finds companies and documents verifiable buying signals
+- **G03 · Outreach Agent** — 03 · Agent Operations: Writes personalized messages and sends only when permitted
+- **G04 · Conversation Agent** — 03 · Agent Operations: Understands inbound intent and manages approved replies
+- **G05 · Qualification Agent** — 03 · Agent Operations: Extracts needs, decision authority, budget and timeline
+- **G06 · Meeting Agent** — 03 · Agent Operations: Schedules confirmed meetings with provider acknowledgment
+- **G07 · Meeting Intelligence Agent** — 03 · Agent Operations: Processes authorized transcripts into notes and commitments
+- **G08 · Follow-up & Insights Agent** — 03 · Agent Operations: Monitors tasks, stalled deals and accountable follow-ups
+- **G09 · Agent Control Center** — 03 · Agent Operations: Configure, pause and monitor eight specialist agents
+- **G10 · Execution Inspector** — 03 · Agent Operations: Every AI plan and external side effect is independently auditable
+- **G11 · Agent Builder & Guardrails** — 03 · Agent Operations: Create reusable, tenant-safe AI workers from schemas
+- **E01 · My Preferences** — 04 · Enterprise Administration: Personal defaults and tenant-aware business behavior
+- **E02 · Security Center** — 04 · Enterprise Administration: Identity, session protection and security policies
+- **E03 · SSO & Identity Providers** — 04 · Enterprise Administration: OIDC and SAML configuration with explicit verification
+- **E04 · Users, Roles & Permissions** — 04 · Enterprise Administration: Control membership with least-privilege authorization
+- **E05 · Integration Marketplace** — 04 · Enterprise Administration: Configure approved connectors without changing source code
+- **E06 · Custom Connector Properties** — 04 · Enterprise Administration: Versioned provider manifests, credentials and field mapping
+- **E07 · WhatsApp Business Configuration** — 04 · Enterprise Administration: Meta-approved business messaging and channel setup
+- **E08 · WhatsApp AI Bot Studio** — 04 · Enterprise Administration: Design and safely test contextual WhatsApp conversations
+- **E09 · WhatsApp Templates & Opt-ins** — 04 · Enterprise Administration: Manage authorized templates, opt-in evidence and suppression
+- **E10 · Webhook Manager** — 04 · Enterprise Administration: Signed, retryable event delivery with auditable outcomes
+- **E11 · Audit & Compliance Log** — 04 · Enterprise Administration: Evidence for user actions, model decisions and external execution
+- **E12 · Organization & Global Settings** — 04 · Enterprise Administration: Tenant branding, privacy, compliance and global defaults
+- **M01 · Mobile Command Center** — 05 · Mobile Views: AI work and handoffs at a glance
+- **M02 · Mobile Agent Activity** — 05 · Mobile Views: Monitor runs and intervention requests
+- **M03 · Mobile AI Inbox** — 05 · Mobile Views: Review autonomous conversations
+- **M04 · Mobile Meeting Brief** — 05 · Mobile Views: Prepare for a qualified customer call
+- **M05 · Mobile Approvals** — 05 · Mobile Views: Approve or reject sensitive AI actions
+- **M06 · Mobile Settings** — 05 · Mobile Views: Preferences, security and account access
+- **F01 · End-to-End Agent Journey** — 06 · User Flows: How autonomous agents work together under policy

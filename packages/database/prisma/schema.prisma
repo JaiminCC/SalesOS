@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  slug               String    @unique
+  status             String    @default("ACTIVE")
+  timezone           String    @default("UTC")
+  locale             String    @default("en")
+  currency           String    @default("USD") @db.Char(3)
+  settings           Json      @default("{}")
+  automationStatus   String    @default("RUNNING") @map("automation_status")
+  automationPausedAt DateTime? @map("automation_paused_at") @db.Timestamptz(6)
+  automationPausedBy String?   @map("automation_paused_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  memberships     Membership[]
+  roles           Role[]
+  auditEvents     AuditEvent[]
+  outboxEvents    OutboxEvent[]
+  idempotencyKeys IdempotencyKey[]
+  jobExecutions   JobExecution[]
+
+  @@map("tenants")
+}
+
+model User {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emailHmac         String    @unique @map("email_hmac")
+  emailCiphertext   Bytes     @map("email_ciphertext")
+  displayName       String    @map("display_name")
+  passwordHash      String?   @map("password_hash")
+  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(6)
+  status            String    @default("INVITED")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sessions             Session[]
+  memberships          Membership[]
+  mfaFactors           MfaFactor[]
+  recoveryCodes        RecoveryCode[]
+  passwordResetTokens  PasswordResetToken[]
+
+  @@map("users")
+}
+
+model Session {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash")
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(6)
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") @db.Timestamptz(6)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(6)
+  userAgent         String?   @map("user_agent")
+  ipHash            String?   @map("ip_hash")
+  mfaSatisfied      Boolean   @default(false) @map("mfa_satisfied")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@map("sessions")
+}
+
+model MfaFactor {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  secretCiphertext Bytes     @map("secret_ciphertext")
+  verifiedAt       DateTime? @map("verified_at") @db.Timestamptz(6)
+  disabledAt       DateTime? @map("disabled_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("mfa_factors")
+}
+
+model RecoveryCode {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("recovery_codes")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+model AuthAttempt {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipHash    String   @map("ip_hash")
+  emailHmac String   @map("email_hmac")
+  succeeded Boolean
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([emailHmac, createdAt])
+  @@map("auth_attempts")
+}
+
+model Membership {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  status    String   @default("INVITED")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roles     MembershipRole[]
+
+  @@id([tenantId, userId])
+  @@map("memberships")
+}
+
+model Role {
+  tenantId    String   @map("tenant_id") @db.Uuid
+  id          String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  members     MembershipRole[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, name])
+  @@map("roles")
+}
+
+model RolePermission {
+  tenantId   String @map("tenant_id") @db.Uuid
+  roleId     String @map("role_id") @db.Uuid
+  permission String
+  role       Role   @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, roleId, permission])
+  @@map("role_permissions")
+}
+
+model MembershipRole {
+  tenantId   String     @map("tenant_id") @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
+  roleId     String     @map("role_id") @db.Uuid
+  membership Membership @relation(fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+  role       Role       @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, userId, roleId])
+  @@map("membership_roles")
+}
+
+model AuditEvent {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  id         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorType  String   @map("actor_type")
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  payload    Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@index([tenantId, createdAt])
+  @@map("audit_events")
+}
+
+model OutboxEvent {
+  tenantId      String    @map("tenant_id") @db.Uuid
+  id            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type")
+  schemaVersion Int       @default(1) @map("schema_version")
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  payload       Json
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz(6)
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@index([status, createdAt])
+  @@map("outbox_events")
+}
+
+model IdempotencyKey {
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  route       String
+  requestHash String   @map("request_hash")
+  response    Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, key])
+  @@map("idempotency_keys")
+}
+
+model JobExecution {
+  tenantId       String    @map("tenant_id") @db.Uuid
+  id             String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queueName      String    @map("queue_name")
+  jobName        String    @map("job_name")
+  idempotencyKey String    @map("idempotency_key")
+  status         String
+  attempts       Int       @default(0)
+  payload        Json      @default("{}")
+  result         Json?
+  errorCode      String?   @map("error_code")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt      DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status, createdAt])
+  @@map("job_executions")
+}

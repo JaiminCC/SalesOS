@@ -1,0 +1,27 @@
+flowchart TD
+  ADMIN[Company administrator / CCO] --> UI[Next.js SalesOS Console]
+  SALES[Sales team] --> UI
+  UI --> API[NestJS API / Auth / PolicyService]
+  DISC[Authorized research sources] --> ING[Lead source adapters]
+  MAIL[Authorized business email] <--> MAILAD[Mailbox adapter]
+  CAL[Calendar provider] <--> CALAD[Calendar adapter]
+  MEET[Consented meeting transcript / permitted provider artifact] --> MI[Meeting intake + artifact consent gate]
+  ING --> QUEUE[BullMQ + Redis]
+  MAILAD <--> QUEUE
+  CALAD <--> QUEUE
+  MI --> QUEUE
+  API <--> DB[(PostgreSQL tenant tables + RLS)]
+  API --> QUEUE
+  QUEUE --> SUP[Continuous Sales Supervisor]
+  SUP --> PLAN[LLM action planning + approved tenant knowledge]
+  PLAN --> POLICY{Deterministic policy gate}
+  POLICY -->|Blocked / approval needed| UI
+  POLICY -->|Authorized| ACT[Typed action executor]
+  ACT --> MAILAD
+  ACT --> CALAD
+  ACT --> TASK[CRM tasks, meetings, briefs, notes]
+  TASK --> DB
+  MI --> NOTES[Transcript processing + source-anchored meeting notes]
+  NOTES --> TASK
+  API --> STOP[Per-tenant immediate pause / audit]
+  STOP --> POLICY
