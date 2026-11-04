@@ -10,7 +10,11 @@ export class FoundationQueue implements OnModuleDestroy {
   private readonly connection: IORedis;
 
   constructor(@Inject(AppConfig) config: AppConfig) {
-    this.connection = new IORedis(config.env.REDIS_URL, { maxRetriesPerRequest: null });
+    this.connection = new IORedis(config.env.REDIS_URL, {
+      maxRetriesPerRequest: 1,
+      connectTimeout: 1000,
+      enableOfflineQueue: false,
+    });
     this.connection.on('error', () => undefined);
     this.queue = new Queue<FoundationJobData>(FOUNDATION_QUEUE, { connection: this.connection });
   }

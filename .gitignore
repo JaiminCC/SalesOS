@@ -5,6 +5,12 @@ coverage
 .turbo
 *.log
 .DS_Store
+*.pem
+*.key
+*.p12
+*.pfx
+tmp/
+.docker-data/
 
 .env
 .env.local

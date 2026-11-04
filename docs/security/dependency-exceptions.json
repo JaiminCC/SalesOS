@@ -1,56 +1,67 @@
 {
   "reviewedOn": "2026-11-04",
-  "note": "Reviewed after pnpm audit on the Sprint 1 lockfile. Production multer is overridden to 2.5.0 and direct Zod is 4.6.7. The entries below have no compatible patch inside the current Next 15.5.29, Vitest 3, Prisma 6, or ESLint 9 lines.",
+  "owner": "Jaimin Belani",
+  "note": "Open exceptions only. These are not resolved vulnerabilities. PostCSS GHSA-qx2v-qp2m-jg93, GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp, and GHSA-r28c-9q8g-f849 were removed from this register on 2026-11-04 after the pnpm override pinned postcss to 8.5.32, including the copy nested in next@15.5.29. Direct multer is 2.5.0 and direct Zod is 4.6.7. Each remaining entry has no compatible patch inside the current Vitest 3, Prisma 6, or ESLint 9 line.",
   "advisories": [
-    {
-      "id": "GHSA-qx2v-qp2m-jg93",
-      "package": "postcss",
-      "reason": "Nested postcss@8.4.31 inside next@15.5.29. Direct postcss is 8.5.32. Do not force-upgrade Next to 16."
-    },
-    {
-      "id": "GHSA-6g55-p6wh-862q",
-      "package": "postcss",
-      "reason": "Nested postcss@8.4.31 inside next@15.5.29."
-    },
-    {
-      "id": "GHSA-fxqj-rqcc-2cmp",
-      "package": "postcss",
-      "reason": "Nested postcss@8.4.31 inside next@15.5.29."
-    },
-    {
-      "id": "GHSA-r28c-9q8g-f849",
-      "package": "postcss",
-      "reason": "Nested postcss@8.4.31 inside next@15.5.29."
-    },
     {
       "id": "GHSA-5gmw-xhrv-c9v3",
       "package": "tinypool",
-      "reason": "Vitest 3.2.7 depends on tinypool 1.1.1. The patched line is 2.1.2, which Vitest 3 does not use. Dev-only test runner."
+      "installed": "1.1.1",
+      "severity": "critical",
+      "owner": "Jaimin Belani",
+      "reviewedOn": "2026-11-04",
+      "reviewBy": "2026-12-04",
+      "reason": "Vitest 3.2.7 depends on tinypool 1.1.1. The patched line is >=2.1.1, which Vitest 3 does not use. Dev-only test runner. A major upgrade to Vitest 4 is deferred until the suite is migrated."
     },
     {
       "id": "GHSA-85c8-ppgw-ccpr",
       "package": "tinypool",
-      "reason": "Same Vitest 3 pin as GHSA-5gmw-xhrv-c9v3. Not used by the API or worker runtime."
+      "installed": "1.1.1",
+      "severity": "critical",
+      "owner": "Jaimin Belani",
+      "reviewedOn": "2026-11-04",
+      "reviewBy": "2026-12-04",
+      "reason": "Same Vitest 3 pin as GHSA-5gmw-xhrv-c9v3. Patched in tinypool >=2.1.2. Not used by the API or worker runtime."
     },
     {
       "id": "GHSA-82fw-gwwq-j7x9",
       "package": "vitest",
-      "reason": "Fixed in Vitest 4.1.11. Sprint 1 stays on Vitest 3 so the current suite remains the verified runner."
+      "installed": "3.2.7",
+      "severity": "moderate",
+      "owner": "Jaimin Belani",
+      "reviewedOn": "2026-11-04",
+      "reviewBy": "2026-12-04",
+      "reason": "Affects vitest and @vitest/mocker 3.2.7. Fixed in Vitest >=4.1.11. Sprint 1.1 stays on Vitest 3 so the verified suite does not change runners."
     },
     {
       "id": "GHSA-qxg6-89mg-rqv8",
       "package": "@vitest/mocker",
-      "reason": "Fixed in Vitest 4.1.12. Dev-only, same hold as GHSA-82fw-gwwq-j7x9."
+      "installed": "3.2.7",
+      "severity": "moderate",
+      "owner": "Jaimin Belani",
+      "reviewedOn": "2026-11-04",
+      "reviewBy": "2026-12-04",
+      "reason": "Fixed in @vitest/mocker >=4.1.12. Dev-only, same hold as GHSA-82fw-gwwq-j7x9."
     },
     {
       "id": "GHSA-ggr8-5vv4-36mx",
       "package": "deepmerge-ts",
-      "reason": "@prisma/config@6.19.3 depends on deepmerge-ts 7.1.5. The fix is 8.x and is owned by the Prisma CLI, not application runtime."
+      "installed": "7.1.5",
+      "severity": "high",
+      "owner": "Jaimin Belani",
+      "reviewedOn": "2026-11-04",
+      "reviewBy": "2026-12-04",
+      "reason": "@prisma/config@6.19.3 depends on deepmerge-ts 7.1.5. The fix is 8.x, a major bump owned by the Prisma CLI. It is not imported by SalesOS application code."
     },
     {
       "id": "GHSA-g3hv-75wg-m249",
       "package": "minimatch",
-      "reason": "ESLint 9 depends on minimatch 3.x and 10.x. The patched release is 11.x. Dev-only lint toolchain."
+      "installed": "3.1.5 and 10.2.6",
+      "severity": "moderate",
+      "owner": "Jaimin Belani",
+      "reviewedOn": "2026-11-04",
+      "reviewBy": "2026-12-04",
+      "reason": "ESLint 9.39.5 and typescript-eslint 8.72.1 depend on minimatch 3.1.5 and 10.2.6. The patched release is >=11.0.1. Forcing that major would break the ESLint 9 toolchain. Dev-only lint."
     }
   ]
 }

@@ -1,0 +1,13 @@
+{
+  "json.validate.enable": true,
+  "json.schemas": [
+    {
+      "fileMatch": ["tsconfig.json", "tsconfig.*.json", "tsconfig-*.json"],
+      "url": "https://www.schemastore.org/tsconfig",
+      "schema": {
+        "type": "object",
+        "description": "Offline stand-in for the obsolete SchemaStore URL registered by Cursor's TypeScript extension. The extension also applies its bundled tsconfig schema, which is what validates these files. Cursor leaves json.schemaDownload.enable false, so this body is supplied locally and the remote URL is not fetched."
+      }
+    }
+  ]
+}

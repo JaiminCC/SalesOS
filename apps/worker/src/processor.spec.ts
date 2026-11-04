@@ -61,39 +61,43 @@ describe.skipIf(!process.env.DATABASE_URL_APP || !process.env.REDIS_URL)('founda
       (job) => processFoundationPing(job, prisma),
       { connection: workerConnection },
     );
-    const completed = new Promise<void>((resolvePromise, reject) => {
-        const timer = setTimeout(() => reject(new Error('job timed out')), 15000);
-        worker.on('completed', (job) => {
-          if (job.data.jobExecutionId === jobExecutionId) {
-            clearTimeout(timer);
-            resolvePromise();
-          }
-        });
-        worker.on('failed', (job, error) => {
-          if (job?.data.jobExecutionId === jobExecutionId && job.attemptsMade >= (job.opts.attempts ?? 1)) {
-            clearTimeout(timer);
-            reject(error);
-          }
-        });
-    });
     try {
       await queue.add(
         FOUNDATION_PING_JOB,
         { tenantId: tenantA, jobExecutionId, outboxId },
         { jobId: foundationJobId(tenantA, outboxId), attempts: 5, backoff: { type: 'exponential', delay: 50 } },
       );
-      await completed;
-      const row = await withTenant(prisma, tenantA, (tx) =>
-        tx.jobExecution.findUnique({ where: { tenantId_id: { tenantId: tenantA, id: jobExecutionId } } }),
-      );
+      let row: { status: string; attempts: number; result: unknown } | null = null;
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        row = await withTenant(prisma, tenantA, (tx) =>
+          tx.jobExecution.findUnique({ where: { tenantId_id: { tenantId: tenantA, id: jobExecutionId } } }),
+        );
+        if (row?.status === 'SUCCEEDED' && row.attempts >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       expect(row?.status).toBe('SUCCEEDED');
       expect(row?.attempts).toBeGreaterThanOrEqual(2);
       expect(row?.result).toEqual({ pong: true });
+      await processFoundationPing(
+        {
+          name: FOUNDATION_PING_JOB,
+          attemptsMade: 4,
+          opts: { attempts: 5 },
+          data: { tenantId: tenantA, jobExecutionId, outboxId },
+        } as Parameters<typeof processFoundationPing>[0],
+        prisma,
+      );
+      const replayed = await withTenant(prisma, tenantA, (tx) =>
+        tx.jobExecution.findUnique({ where: { tenantId_id: { tenantId: tenantA, id: jobExecutionId } } }),
+      );
+      expect(replayed?.status).toBe('SUCCEEDED');
+      expect(replayed?.attempts).toBe(row?.attempts);
     } finally {
       await worker.close();
       await queue.close();
       await queueConnection.quit();
       await workerConnection.quit();
     }
-  });
+  }, 20000);
 });

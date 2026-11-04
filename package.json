@@ -27,7 +27,8 @@
   },
   "pnpm": {
     "overrides": {
-      "multer": "2.5.0"
+      "multer": "2.5.0",
+      "postcss": "8.5.32"
     }
   },
   "devDependencies": {

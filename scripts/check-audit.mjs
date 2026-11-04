@@ -2,6 +2,17 @@ import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const exceptions = JSON.parse(readFileSync(new URL('../docs/security/dependency-exceptions.json', import.meta.url), 'utf8'));
+const today = new Date().toISOString().slice(0, 10);
+for (const advisory of exceptions.advisories) {
+  if (!advisory.id || !advisory.owner || !advisory.reviewBy || !advisory.reason) {
+    process.stderr.write(`Incomplete exception: ${advisory.id ?? '(missing id)'}\n`);
+    process.exit(1);
+  }
+  if (advisory.reviewBy < today) {
+    process.stderr.write(`Exception ${advisory.id} expired on ${advisory.reviewBy}\n`);
+    process.exit(1);
+  }
+}
 const allowed = new Set(exceptions.advisories.map((advisory) => advisory.id));
 
 let raw = '';

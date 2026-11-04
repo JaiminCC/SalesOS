@@ -1,18 +1,44 @@
-import { UnrecoverableError, type Job } from 'bullmq';
+import { Queue, UnrecoverableError, type Job } from 'bullmq';
 import { Prisma, withTenant, type PrismaClient } from '@salesos/database';
-import { FOUNDATION_PING_JOB, type FoundationJobData } from '@salesos/shared';
+import { FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, foundationJobId, type FoundationJobData } from '@salesos/shared';
 
 type PendingOutbox = {
   tenant_id: string;
   id: string;
   event_type: string;
   aggregate_id: string;
-  payload: unknown;
   attempts: number;
 };
 
 export async function listPendingOutbox(prisma: PrismaClient): Promise<PendingOutbox[]> {
-  return prisma.$queryRaw<PendingOutbox[]>(Prisma.sql`SELECT * FROM list_pending_outbox(25)`);
+  return prisma.$queryRaw<PendingOutbox[]>(Prisma.sql`SELECT * FROM public.list_pending_outbox(25)`);
+}
+
+export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData>): Promise<number> {
+  const pending = await listPendingOutbox(prisma);
+  let published = 0;
+  for (const row of pending) {
+    if (row.event_type !== FOUNDATION_PING_EVENT) continue;
+    const data: FoundationJobData = {
+      tenantId: row.tenant_id,
+      jobExecutionId: row.aggregate_id,
+      outboxId: row.id,
+    };
+    try {
+      await queue.add(FOUNDATION_PING_JOB, data, {
+        jobId: foundationJobId(data.tenantId, data.outboxId),
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 200 },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      });
+      published += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (!message.includes('already exists')) throw error;
+    }
+  }
+  return published;
 }
 
 export async function processFoundationPing(job: Job<FoundationJobData>, prisma: PrismaClient): Promise<{ pong: true }> {

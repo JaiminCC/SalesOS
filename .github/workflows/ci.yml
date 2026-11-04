@@ -34,6 +34,8 @@ jobs:
       DATABASE_URL: postgresql://salesos:ci-postgres-password@127.0.0.1:5432/salesos
       DATABASE_URL_APP: postgresql://salesos_app:ci-app-password@127.0.0.1:5432/salesos
       SALESOS_APP_PASSWORD: ci-app-password
+      DATABASE_URL_WORKER: postgresql://salesos_worker:ci-worker-password@127.0.0.1:5432/salesos
+      SALESOS_WORKER_PASSWORD: ci-worker-password
       REDIS_URL: redis://127.0.0.1:6379
       DATA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       INTERNAL_JOB_TOKEN: ci-internal-job-token
@@ -56,5 +58,6 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm check:source
       - run: pnpm --filter @salesos/web build
       - run: node scripts/check-audit.mjs
