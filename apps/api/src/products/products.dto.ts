@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PRODUCT_TYPES } from '@salesos/shared';
 
 export class ListProductsQuery {
@@ -26,8 +26,16 @@ export class ListProductsQuery {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50)
+  @Max(100)
   pageSize?: number;
+
+  @IsOptional()
+  @IsIn(['name', 'productType', 'status', 'createdAt', 'updatedAt'])
+  sortBy?: 'name' | 'productType' | 'status' | 'createdAt' | 'updatedAt';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortDirection?: 'asc' | 'desc';
 }
 
 export class ProductBody {
@@ -86,6 +94,10 @@ export class ProductBody {
   @IsString()
   @MaxLength(3)
   currency?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  expectedUpdatedAt?: string;
 }
 
 export class CreateProductDto {
@@ -227,6 +239,10 @@ export class ProductDefaultsDto {
   @Min(0)
   @Max(3650)
   knowledgeRetentionDays?: number;
+
+  @IsOptional()
+  @IsISO8601()
+  expectedUpdatedAt?: string;
 }
 
 export class IcpBody {

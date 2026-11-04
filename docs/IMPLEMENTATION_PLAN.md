@@ -342,6 +342,12 @@ Sprint 3 uses the existing permission catalog. Document and version approval use
 
 **Phase 3 exit:** ST-002 passes. A second product in another industry is configuration, not a code change. AT-18's configuration half is ready; the full journey waits for later phases.
 
+### Sprint 3.1 — Management screens
+
+**Status:** Implemented. See `docs/SPRINT_3_1_COMPLETION.md`, `docs/MANAGEMENT_UI_AUDIT.md`, `docs/MANAGEMENT_API_CONTRACTS.md`, `docs/SECURE_NAVIGATION.md`, and `docs/BULK_OPERATION_POLICIES.md`.
+
+Live lists, dedicated add/view/edit pages, and body-based management routes cover members, organizations, invitations, sessions, audit (read-only), products, versions, ICPs, knowledge, and organization defaults. Roles stay a server-backed matrix. Simulated CRM and agent screens were not given production CRUD. Navigation contexts keep database ids out of the browser URL and are stored per tab in `sessionStorage`.
+
 ---
 
 ## Phase 4 — AI Sales Supervisor runtime

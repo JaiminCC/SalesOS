@@ -318,3 +318,13 @@ Published snapshots are immutable. A database trigger rejects snapshot edits exc
 Knowledge bytes live under `SALESOS_STORAGE_ROOT` (default `data/objects`, gitignored), never in `apps/web/public`. API responses omit `storageKey` and filesystem paths. Retrieval for live agent context uses only the published version and documents that are still `APPROVED`. Keyword results are labeled `keyword`. Semantic results require the pinned 384-dimension model. The HTTP embedding provider is refused when `NODE_ENV=test` or `CI=true`.
 
 The reusable context service is `POST /api/v1/products/:id/context/preview`. It is not an LLM agent. Command Center, campaigns, inbox, and WhatsApp stay simulated.
+
+## 15. Management screens and secure navigation (Sprint 3.1)
+
+Live management screens share one interaction pattern: a list with server pagination, an allowlisted sort, search, and module filters, then dedicated add, view, and edit pages. Browser paths are `/workspace/{module}`, `/workspace/{module}/add`, `/workspace/{module}/view`, and `/workspace/{module}/edit`. Those paths do not carry database primary keys.
+
+The selected record is an opaque navigation context. `POST /api/v1/navigation/contexts` checks the session, the active organization, resource ownership, and the permission for that action, then stores a random token hash on `navigation_contexts`. The browser keeps the token in `sessionStorage` for that tab only. Refresh calls `POST /api/v1/navigation/contexts/resolve`, and the API checks authorization again before it returns the record. Logout, organization switch, role change, member removal, and password reset revoke the session's contexts. A context is not a permission.
+
+Item mutations that must not put identifiers in the URL use `POST /api/v1/management/...` with the identifier in the JSON body. The Sprint 2 and Sprint 3 routes under `/api/v1/products`, `/api/v1/organizations`, and `/api/v1/auth` remain. Bulk changes run one record at a time, at most 50 identifiers, and return a result per identifier. Queries inside a tenant transaction run one after another so Prisma does not interleave statements on one transaction client.
+
+Audit events stay append-only. Published product versions stay immutable. Knowledge deletion still follows retention and tombstone rules. Command Center, agents, leads, campaigns, conversations, meetings, analytics, SSO, integrations, WhatsApp, and webhooks stay simulated.

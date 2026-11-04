@@ -11,6 +11,7 @@ import {
 import { OWNER_ROLE_NAMES, PERMISSIONS, SYSTEM_ROLE_PERMISSIONS, type SystemRole } from '@salesos/shared';
 import { AppConfig } from '../config/app-config';
 import { ApiException } from '../common/api.exception';
+import { runBatch } from '../common/batch';
 import { IdentityDatabase } from './identity-database.service';
 import { dummyPasswordHash, hashPassword, verifyPassword } from './passwords';
 
@@ -22,6 +23,7 @@ const RESET_MS = 60 * 60 * 1000;
 const VERIFY_MS = 24 * 60 * 60 * 1000;
 const INVITE_MS = 7 * 24 * 60 * 60 * 1000;
 const WINDOW_MS = 15 * 60 * 1000;
+export const MEMBER_EMAIL_SEARCH_LIMIT = 100;
 
 type MembershipRow = {
   tenant_id: string;
@@ -113,7 +115,7 @@ export class IdentityService {
     }
     if (input.presentedToken) await this.revokeToken(input.presentedToken);
     const memberships = await this.memberships(user.id);
-    const activeTenant = memberships.find((row) => row.membership_status === 'ACTIVE' && row.tenant_status === 'ACTIVE');
+    const activeTenant = await this.selectOrganization(user.id, memberships);
     const token = newToken();
     const now = new Date();
     const absolute = new Date(now.getTime() + (input.remember ? REMEMBER_MS : ABSOLUTE_MS));
@@ -141,6 +143,7 @@ export class IdentityService {
     const session = await this.findLiveSession(token);
     await this.revokeToken(token);
     if (session) {
+      await this.revokeNavigation(session.id);
       await this.security(session.userId, session.activeTenantId, 'auth.logout', 'accepted', requestId, {});
       if (session.activeTenantId) {
         await this.audit(session.activeTenantId, session.userId, 'auth.logout', 'session', session.id, requestId);
@@ -170,10 +173,12 @@ export class IdentityService {
       where: { id: row.userId },
       data: { passwordHash: await hashPassword(password), passwordChangedAt: new Date(), status: 'ACTIVE' },
     });
+    const sessions = await this.database.prisma.session.findMany({ where: { userId: row.userId, revokedAt: null }, select: { id: true } });
     await this.database.prisma.session.updateMany({
       where: { userId: row.userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    for (const item of sessions) await this.revokeNavigation(item.id);
     await this.security(row.userId, null, 'auth.password_change', 'accepted', requestId, {});
   }
 
@@ -207,6 +212,7 @@ export class IdentityService {
     const row = await this.database.prisma.session.findFirst({ where: { id: sessionId, userId: actorId } });
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Session was not found');
     await this.database.prisma.session.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
+    await this.revokeNavigation(row.id);
     await this.security(actorId, tenantId, 'auth.session_revoke', 'accepted', requestId, { sessionId });
     if (tenantId) await this.audit(tenantId, actorId, 'auth.session_revoke', 'session', sessionId, requestId);
   }
@@ -231,6 +237,7 @@ export class IdentityService {
 
   async createAdditionalOrganization(actor: SessionContext, name: string, requestId: string) {
     const tenantId = await this.createOrganization(actor.userId, name);
+    await this.revokeNavigation(actor.sessionId);
     await this.database.prisma.session.update({ where: { id: actor.sessionId }, data: { activeTenantId: tenantId } });
     await this.audit(tenantId, actor.userId, 'organization.create', 'organization', tenantId, requestId);
     return this.organization(actor.userId, tenantId);
@@ -262,6 +269,7 @@ export class IdentityService {
 
   async switchOrganization(actor: SessionContext, tenantId: string, requestId: string): Promise<void> {
     await this.requireActiveMembership(actor.userId, tenantId);
+    await this.revokeNavigation(actor.sessionId);
     await this.database.prisma.session.update({ where: { id: actor.sessionId }, data: { activeTenantId: tenantId } });
     await this.audit(tenantId, actor.userId, 'organization.switch', 'organization', tenantId, requestId);
   }
@@ -356,7 +364,9 @@ export class IdentityService {
       await tx.membershipRole.deleteMany({ where: { tenantId, userId } });
       await tx.membershipRole.create({ data: { tenantId, userId, roleId: next.id } });
     });
+    const sessions = await this.database.prisma.session.findMany({ where: { userId, revokedAt: null }, select: { id: true } });
     await this.database.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    for (const item of sessions) await this.revokeNavigation(item.id);
     await this.audit(tenantId, actor.userId, 'membership.role_change', 'membership', userId, requestId);
   }
 
@@ -383,10 +393,15 @@ export class IdentityService {
       await tx.membershipRole.create({ data: { tenantId, userId: actor.userId, roleId: adminRole.id } });
       await tx.membershipRole.create({ data: { tenantId, userId, roleId: ownerRole.id } });
     });
+    const sessions = await this.database.prisma.session.findMany({
+      where: { userId: { in: [actor.userId, userId] }, revokedAt: null },
+      select: { id: true },
+    });
     await this.database.prisma.session.updateMany({
       where: { userId: { in: [actor.userId, userId] }, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    for (const item of sessions) await this.revokeNavigation(item.id);
     await this.audit(tenantId, actor.userId, 'organization.owner_transfer', 'membership', userId, requestId);
   }
 
@@ -406,10 +421,15 @@ export class IdentityService {
       await tx.membershipRole.deleteMany({ where: { tenantId, userId } });
       await tx.membership.update({ where: { tenantId_userId: { tenantId, userId } }, data: { status: 'REMOVED' } });
     });
+    const sessions = await this.database.prisma.session.findMany({
+      where: { userId, activeTenantId: tenantId, revokedAt: null },
+      select: { id: true },
+    });
     await this.database.prisma.session.updateMany({
       where: { userId, activeTenantId: tenantId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    for (const item of sessions) await this.revokeNavigation(item.id);
     await this.audit(tenantId, actor.userId, 'membership.remove', 'membership', userId, requestId);
   }
 
@@ -445,6 +465,329 @@ export class IdentityService {
         requestId: (row.payload as { requestId?: string }).requestId ?? null,
       }));
     });
+  }
+
+  async memberDirectory(actor: SessionContext, query: DirectoryQuery) {
+    const tenantId = this.activeTenant(actor);
+    const needle = query.q?.trim().toLowerCase() ?? '';
+    const where = this.memberWhere(tenantId, query);
+    if (!needle && query.sortBy !== 'email') {
+      const page = query.sortBy === 'role'
+        ? await this.memberRolePage(tenantId, where, query)
+        : await this.memberPage(tenantId, where, query);
+      return { ...page, emailSearch: { mode: 'none' as const, scanned: page.items.length, limit: MEMBER_EMAIL_SEARCH_LIMIT, truncated: false } };
+    }
+    if (!needle) return this.boundedEmailDirectory(tenantId, where, query, '');
+    return this.searchMembers(tenantId, where, query, needle);
+  }
+
+  async memberRecord(actor: SessionContext, userId: string) {
+    const page = await this.memberDirectory(actor, { page: 1, pageSize: 100 });
+    const direct = page.items.find((item) => item.userId === userId);
+    if (direct) return direct;
+    const tenantId = this.activeTenant(actor);
+    const row = await withTenant(this.database.prisma, tenantId, (tx) =>
+      tx.membership.findUnique({ where: { tenantId_userId: { tenantId, userId } }, include: { user: true, roles: { include: { role: true } } } }),
+    );
+    if (!row || row.status === 'REMOVED') throw new ApiException(404, 'NOT_FOUND', 'Member was not found');
+    return {
+      userId: row.userId,
+      displayName: row.user.displayName,
+      email: decryptField(Buffer.from(row.user.emailCiphertext), this.key),
+      status: row.status,
+      roles: row.roles.map((link) => link.role.name),
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  async organizationDirectory(actor: SessionContext, query: DirectoryQuery) {
+    const rows = await this.organizations(actor.userId);
+    const needle = query.q?.toLowerCase();
+    const filtered = rows.filter((row) => !needle || row.name.toLowerCase().includes(needle) || row.slug.toLowerCase().includes(needle));
+    const direction = query.sortDirection === 'desc' ? -1 : 1;
+    const sorted = [...filtered].sort((left, right) => {
+      const field = query.sortBy === 'status' ? 'status' : 'name';
+      return direction * left[field].localeCompare(right[field]) || left.id.localeCompare(right.id);
+    });
+    return pageSlice(sorted, query.page, query.pageSize);
+  }
+
+  async invitationDirectory(actor: SessionContext, query: DirectoryQuery) {
+    const tenantId = this.activeTenant(actor);
+    if (!actor.permissions.includes('users.invite') && !actor.permissions.includes('users.manage')) {
+      throw new ApiException(403, 'FORBIDDEN', 'Invitations are not allowed');
+    }
+    const rows = await withTenant(this.database.prisma, tenantId, (tx) =>
+      tx.invitation.findMany({ where: { tenantId }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }] }),
+    );
+    const visible = rows.map((row) => ({
+      id: row.id,
+      roleName: row.roleName,
+      status: invitationStatus(row),
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+    })).filter((row) => !query.status || row.status === query.status);
+    const direction = query.sortDirection === 'asc' ? 1 : -1;
+    const sorted = [...visible].sort((left, right) => direction * left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+    return pageSlice(sorted, query.page, query.pageSize);
+  }
+
+  async revokeInvitation(actor: SessionContext, invitationId: string, requestId: string): Promise<void> {
+    const tenantId = this.activeTenant(actor);
+    if (!actor.permissions.includes('users.invite') && !actor.permissions.includes('users.manage')) {
+      throw new ApiException(403, 'FORBIDDEN', 'Invitations are not allowed');
+    }
+    const updated = await withTenant(this.database.prisma, tenantId, (tx) =>
+      tx.invitation.updateMany({
+        where: { tenantId, id: invitationId, acceptedAt: null, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    );
+    if (updated.count !== 1) throw new ApiException(404, 'NOT_FOUND', 'Invitation was not found');
+    await this.audit(tenantId, actor.userId, 'invitation.revoke', 'invitation', invitationId, requestId);
+  }
+
+  bulkRemoveMembers(actor: SessionContext, ids: string[], requestId: string) {
+    const tenantId = this.activeTenant(actor);
+    return runBatch(ids, (id) => this.removeMember(actor, tenantId, id, requestId));
+  }
+
+  bulkRevokeInvitations(actor: SessionContext, ids: string[], requestId: string) {
+    return runBatch(ids, (id) => this.revokeInvitation(actor, id, requestId));
+  }
+
+  async auditDirectory(actor: SessionContext, query: DirectoryQuery) {
+    const tenantId = this.activeTenant(actor);
+    if (!actor.permissions.includes('audit.read')) throw new ApiException(403, 'FORBIDDEN', 'Audit access is not allowed');
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    return withTenant(this.database.prisma, tenantId, async (tx) => {
+      const where = {
+        tenantId,
+        OR: query.q
+          ? [
+              { action: { contains: query.q, mode: 'insensitive' as const } },
+              { entityType: { contains: query.q, mode: 'insensitive' as const } },
+            ]
+          : undefined,
+      };
+      const total = await tx.auditEvent.count({ where });
+      const rows = await tx.auditEvent.findMany({
+        where,
+        orderBy: [{ createdAt: query.sortDirection === 'asc' ? 'asc' : 'desc' }, { id: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      });
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          actorId: row.actorId,
+          action: row.action,
+          entityType: row.entityType,
+          entityId: row.entityId,
+          createdAt: row.createdAt.toISOString(),
+          requestId: (row.payload as { requestId?: string }).requestId ?? null,
+        })),
+        page,
+        pageSize,
+        total,
+      };
+    });
+  }
+
+  async sessionDirectory(actor: SessionContext, query: DirectoryQuery) {
+    const rows = await this.listSessions(actor.userId, actor.sessionId);
+    const needle = query.q?.toLowerCase();
+    const filtered = rows.filter((row) => !needle || (row.userAgent ?? '').toLowerCase().includes(needle));
+    const sorted = query.sortDirection === 'asc' ? [...filtered].reverse() : filtered;
+    return pageSlice(sorted, query.page, query.pageSize);
+  }
+
+  bulkRevokeSessions(actor: SessionContext, ids: string[], requestId: string) {
+    return runBatch(ids, (id) => this.revokeSession(actor.userId, id, requestId, actor.tenantId));
+  }
+
+  private async selectOrganization(userId: string, memberships: MembershipRow[]): Promise<MembershipRow | undefined> {
+    const eligible = memberships.filter((row) => row.membership_status === 'ACTIVE' && row.tenant_status === 'ACTIVE');
+    const last = await this.database.prisma.session.findFirst({
+      where: { userId, activeTenantId: { not: null } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { activeTenantId: true },
+    });
+    const preferred = last?.activeTenantId ? eligible.find((row) => row.tenant_id === last.activeTenantId) : undefined;
+    if (preferred) return preferred;
+    return [...eligible].sort((left, right) => left.tenant_id.localeCompare(right.tenant_id))[0];
+  }
+
+  private memberWhere(tenantId: string, query: DirectoryQuery) {
+    return {
+      tenantId,
+      status: query.status ?? { not: 'REMOVED' as const },
+      ...(query.role ? { roles: { some: { role: { name: query.role } } } } : {}),
+    };
+  }
+
+  private async memberPage(tenantId: string, where: ReturnType<IdentityService['memberWhere']>, query: DirectoryQuery) {
+    const page = query.page ?? 1;
+    const pageSize = Math.min(Math.max(query.pageSize ?? 20, 1), 100);
+    const direction: Prisma.SortOrder = query.sortDirection === 'desc' ? 'desc' : 'asc';
+    const orderBy: Prisma.MembershipOrderByWithRelationInput[] = query.sortBy === 'status'
+      ? [{ status: direction }, { userId: 'asc' }]
+      : query.sortBy === 'createdAt'
+        ? [{ createdAt: direction }, { userId: 'asc' }]
+        : [{ user: { displayName: direction } }, { userId: 'asc' }];
+    return withTenant(this.database.prisma, tenantId, async (tx) => {
+      const total = await tx.membership.count({ where });
+      const rows = await tx.membership.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { user: true, roles: { include: { role: true } } },
+      });
+      return {
+        items: rows.map((row) => this.toMember(row)),
+        page,
+        pageSize,
+        total,
+      };
+    });
+  }
+
+  private async memberRolePage(tenantId: string, where: ReturnType<IdentityService['memberWhere']>, query: DirectoryQuery) {
+    const rows = await withTenant(this.database.prisma, tenantId, (tx) =>
+      tx.membership.findMany({
+        where,
+        include: { user: { select: { id: true, displayName: true } }, roles: { include: { role: true } } },
+      }),
+    );
+    const sorted = this.sortMembers(rows.map((row) => ({
+      userId: row.userId,
+      displayName: row.user.displayName,
+      email: '',
+      status: row.status,
+      roles: row.roles.map((link) => link.role.name),
+      createdAt: row.createdAt.toISOString(),
+    })), query);
+    const page = pageSlice(sorted, query.page, query.pageSize);
+    const emails = await this.memberEmails(page.items.map((item) => item.userId));
+    return { ...page, items: page.items.map((item) => ({ ...item, email: emails.get(item.userId) ?? '' })) };
+  }
+
+  private async boundedEmailDirectory(tenantId: string, where: ReturnType<IdentityService['memberWhere']>, query: DirectoryQuery, needle: string) {
+    const scanned = await this.emailScan(tenantId, where);
+    const scope = await withTenant(this.database.prisma, tenantId, (tx) => tx.membership.count({ where }));
+    const filtered = scanned.items.filter((item) => !needle || item.email.toLowerCase().includes(needle) || item.displayName.toLowerCase().includes(needle));
+    const page = pageSlice(this.sortMembers(filtered, query), query.page, query.pageSize);
+    return {
+      ...page,
+      emailSearch: { mode: 'bounded' as const, scanned: scanned.items.length, limit: MEMBER_EMAIL_SEARCH_LIMIT, truncated: scope > MEMBER_EMAIL_SEARCH_LIMIT },
+    };
+  }
+
+  private async searchMembers(tenantId: string, where: ReturnType<IdentityService['memberWhere']>, query: DirectoryQuery, needle: string) {
+    const exact = isExactEmail(needle);
+    const names = await withTenant(this.database.prisma, tenantId, (tx) =>
+      tx.membership.findMany({
+        where: { ...where, user: { displayName: { contains: needle, mode: 'insensitive' } } },
+        include: { user: { select: { id: true, displayName: true } }, roles: { include: { role: true } } },
+      }),
+    );
+    const byId = new Map<string, MemberView>();
+    for (const row of names) {
+      byId.set(row.userId, {
+        userId: row.userId,
+        displayName: row.user.displayName,
+        email: '',
+        status: row.status,
+        roles: row.roles.map((link) => link.role.name),
+        createdAt: row.createdAt.toISOString(),
+      });
+    }
+    let scanned = 0;
+    let truncated = false;
+    if (exact) {
+      const user = await this.database.prisma.user.findUnique({ where: { emailHmac: emailHmac(normalizeEmail(needle), this.key) }, select: { id: true } });
+      if (user && !byId.has(user.id)) {
+        const membership = await withTenant(this.database.prisma, tenantId, (tx) =>
+          tx.membership.findFirst({ where: { ...where, userId: user.id }, include: { user: true, roles: { include: { role: true } } } }),
+        );
+        if (membership) byId.set(membership.userId, this.toMember(membership));
+      }
+    } else {
+      const window = await this.emailScan(tenantId, where);
+      scanned = window.items.length;
+      const scope = await withTenant(this.database.prisma, tenantId, (tx) => tx.membership.count({ where }));
+      truncated = scope > MEMBER_EMAIL_SEARCH_LIMIT;
+      for (const item of window.items) {
+        if (item.email.toLowerCase().includes(needle)) byId.set(item.userId, item);
+      }
+    }
+    const page = pageSlice(this.sortMembers([...byId.values()], query), query.page, query.pageSize);
+    const missing = page.items.filter((item) => !item.email).map((item) => item.userId);
+    const emails = await this.memberEmails(missing);
+    return {
+      ...page,
+      items: page.items.map((item) => ({ ...item, email: item.email || emails.get(item.userId) || '' })),
+      emailSearch: {
+        mode: exact ? 'exact' as const : 'bounded' as const,
+        scanned,
+        limit: MEMBER_EMAIL_SEARCH_LIMIT,
+        truncated,
+      },
+    };
+  }
+
+  private async emailScan(tenantId: string, where: ReturnType<IdentityService['memberWhere']>) {
+    const rows = await withTenant(this.database.prisma, tenantId, (tx) =>
+      tx.membership.findMany({
+        where,
+        orderBy: { userId: 'asc' },
+        take: MEMBER_EMAIL_SEARCH_LIMIT,
+        include: { user: true, roles: { include: { role: true } } },
+      }),
+    );
+    return { items: rows.map((row) => this.toMember(row)) };
+  }
+
+  private async memberEmails(userIds: string[]): Promise<Map<string, string>> {
+    if (!userIds.length) return new Map();
+    const users = await this.database.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, emailCiphertext: true },
+    });
+    return new Map(users.map((user) => [user.id, decryptField(Buffer.from(user.emailCiphertext), this.key)]));
+  }
+
+  private toMember(row: { userId: string; status: string; createdAt: Date; user: { displayName: string; emailCiphertext: Uint8Array }; roles: Array<{ role: { name: string } }> }): MemberView {
+    return {
+      userId: row.userId,
+      displayName: row.user.displayName,
+      email: decryptField(Buffer.from(row.user.emailCiphertext), this.key),
+      status: row.status,
+      roles: row.roles.map((link) => link.role.name),
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  private sortMembers(rows: MemberView[], query: DirectoryQuery): MemberView[] {
+    const direction = query.sortDirection === 'desc' ? -1 : 1;
+    const field = ['displayName', 'email', 'status', 'createdAt', 'role'].includes(query.sortBy ?? '') ? query.sortBy ?? 'displayName' : 'displayName';
+    return [...rows].sort((left, right) => {
+      const value = field === 'role'
+        ? (left.roles[0] ?? '').localeCompare(right.roles[0] ?? '')
+        : String(left[field as 'displayName' | 'email' | 'status' | 'createdAt']).localeCompare(String(right[field as 'displayName' | 'email' | 'status' | 'createdAt']));
+      return direction * value || left.userId.localeCompare(right.userId);
+    });
+  }
+
+  private activeTenant(actor: SessionContext): string {
+    if (!actor.tenantId) throw new ApiException(409, 'ORGANIZATION_REQUIRED', 'Choose an organization first');
+    return actor.tenantId;
+  }
+
+  private async revokeNavigation(sessionId: string): Promise<void> {
+    await this.database.prisma.$executeRaw`SELECT public.revoke_session_navigation(${sessionId}::uuid)`;
   }
 
   private async createOrganization(ownerId: string, name: string): Promise<string> {
@@ -536,10 +879,8 @@ export class IdentityService {
     const since = new Date(Date.now() - WINDOW_MS);
     await this.database.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${email}, 0))`;
-      const [byEmail, byIp] = await Promise.all([
-        tx.authAttempt.count({ where: { emailHmac: email, succeeded: false, createdAt: { gte: since } } }),
-        tx.authAttempt.count({ where: { ipHash, succeeded: false, createdAt: { gte: since } } }),
-      ]);
+      const byEmail = await tx.authAttempt.count({ where: { emailHmac: email, succeeded: false, createdAt: { gte: since } } });
+      const byIp = await tx.authAttempt.count({ where: { ipHash, succeeded: false, createdAt: { gte: since } } });
       if (byEmail >= 5 || byIp >= 100) throw new ApiException(429, 'AUTH_THROTTLED', 'Try again later');
       await tx.authAttempt.create({ data: { emailHmac: email, ipHash, succeeded } });
     });
@@ -608,6 +949,43 @@ export class IdentityService {
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function isExactEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+type MemberView = {
+  userId: string;
+  displayName: string;
+  email: string;
+  status: string;
+  roles: string[];
+  createdAt: string;
+};
+
+type DirectoryQuery = {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+  status?: string;
+  role?: string;
+};
+
+function pageSlice<T>(rows: T[], page = 1, pageSize = 20) {
+  const size = Math.min(Math.max(pageSize, 1), 100);
+  const current = Math.max(page, 1);
+  const start = (current - 1) * size;
+  return { items: rows.slice(start, start + size), page: current, pageSize: size, total: rows.length };
+}
+
+function invitationStatus(row: { acceptedAt: Date | null; revokedAt: Date | null; expiresAt: Date }): string {
+  if (row.acceptedAt) return 'ACCEPTED';
+  if (row.revokedAt) return 'REVOKED';
+  if (row.expiresAt.getTime() <= Date.now()) return 'EXPIRED';
+  return 'PENDING';
 }
 
 function newToken(): string {

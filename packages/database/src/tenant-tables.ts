@@ -15,6 +15,7 @@ export const TENANT_TABLES = [
   'knowledge_embeddings',
   'embedding_indexes',
   'organization_product_defaults',
+  'navigation_contexts',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

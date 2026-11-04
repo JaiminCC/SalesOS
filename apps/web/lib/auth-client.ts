@@ -225,6 +225,10 @@ export function restoreProduct(id: string) {
   return authRequest<CatalogProduct>(productPath(id, '/restore'), { method: 'POST' });
 }
 
+export function productActivity(id: string) {
+  return authRequest<Array<{ id: string; action: string; entityType: string; createdAt: string }>>(productPath(id, '/activity'));
+}
+
 export function listProductVersions(id: string) {
   return authRequest<ProductVersion[]>(productPath(id, '/versions'));
 }
@@ -273,6 +277,24 @@ export function searchKnowledge(id: string, body: { query: string; mode: 'keywor
 
 export function previewProductContext(id: string, body: { query: string; versionId?: string }) {
   return authRequest<Record<string, unknown>>(productPath(id, '/context/preview'), { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function managementRequest<T>(path: string, body: Record<string, unknown> = {}) {
+  return authRequest<T>(`/api/v1/management/${path}`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function openNavigation(body: { resourceType: string; action: 'view' | 'edit' | 'add'; resourceId?: string; parentId?: string; resourceKey?: string }) {
+  return authRequest<{ token: string; expiresAt: string }>('/api/v1/navigation/contexts', {
+    method: 'POST',
+    body: JSON.stringify({ ...body, organizationContext: 'active' }),
+  });
+}
+
+export function resolveNavigation(token: string) {
+  return authRequest<{ resourceType: string; action: string; resourceId: string | null; parentId: string | null; resourceKey: string; expiresAt: string }>(
+    '/api/v1/navigation/contexts/resolve',
+    { method: 'POST', body: JSON.stringify({ token }) },
+  );
 }
 
 export async function downloadKnowledge(id: string, documentId: string, fileName: string) {

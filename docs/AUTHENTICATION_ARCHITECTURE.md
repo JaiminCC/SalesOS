@@ -29,7 +29,7 @@ Registration of an existing email returns the same 202 as a new email. Forgot-pa
 
 ## Tenant context
 
-The client never supplies the tenant used for authorization. Login chooses the first active membership in an active organization and stores it on `sessions.active_tenant_id`. `POST /api/v1/organizations/:id/switch` replaces that column only after `list_user_memberships` shows an active membership in an active organization.
+The client never supplies the tenant used for authorization. Login loads `list_user_memberships` again and keeps only an active membership in an active organization. It then prefers the `active_tenant_id` of the user's newest session when that organization is still eligible. Otherwise it chooses the lowest `tenant_id`. A suspended organization is never selected. The chosen id is stored on the new session. `POST /api/v1/organizations/:id/switch` replaces that column only after `list_user_memberships` shows an active membership in an active organization.
 
 Member, role, invitation, and audit changes then call `withTenant` on the identity client. `set_config('app.tenant_id', ..., true)` is transaction-scoped, so a pooled connection does not keep the tenant after commit. Missing context still returns no rows under `FORCE ROW LEVEL SECURITY`.
 

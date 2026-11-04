@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   addIcp,
   archiveIcp,
@@ -20,7 +20,9 @@ import {
   updateProduct,
   updateProductVersion,
   uploadKnowledge,
+  managementRequest,
 } from '../lib/auth-client';
+import { ConfirmDialog } from './management/kit';
 import '../app/products.css';
 
 const TYPES = [
@@ -61,7 +63,7 @@ function fileToBase64(file) {
   });
 }
 
-export default function Products({ organizationId, permissions = [], notify }) {
+export default function Products({ organizationId, permissions = [], notify, onWorkspace }) {
   const canWrite = permissions.includes('products.write');
   const canPublish = permissions.includes('products.publish');
   const canApprove = permissions.includes('approvals.manage');
@@ -79,7 +81,7 @@ export default function Products({ organizationId, permissions = [], notify }) {
   const [tab, setTab] = useState('Details');
   const [createForm, setCreateForm] = useState(emptyDraft);
   const [detailForm, setDetailForm] = useState(emptyDraft);
-  const [positioning, setPositioning] = useState({ valuePropositions: '', capabilities: '', tone: '', brandVoice: '', restrictedClaims: '', escalationConditions: '', approvalRequirements: '', disallowedBuyers: '' });
+  const [positioning, setPositioning] = useState({ valuePropositions: '', capabilities: '', qualificationQuestions: '', tone: '', brandVoice: '', restrictedClaims: '', escalationConditions: '', approvalRequirements: '', disallowedBuyers: '' });
   const [pricing, setPricing] = useState({ model: 'CUSTOM_QUOTE', visible: false, currency: 'USD', summary: '' });
   const [objections, setObjections] = useState('');
   const [icpName, setIcpName] = useState('');
@@ -91,6 +93,16 @@ export default function Products({ organizationId, permissions = [], notify }) {
   const [rejectReason, setRejectReason] = useState('Not approved for live use');
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [sortBy, setSortBy] = useState('updatedAt');
+  const [sortDirection, setSortDirection] = useState('desc');
+  const [total, setTotal] = useState(0);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [confirm, setConfirm] = useState(null);
+  const [docStatus, setDocStatus] = useState('');
+  const [docSort, setDocSort] = useState('createdAt:desc');
+  const listTicket = useRef(0);
 
   const draft = versions.find((version) => version.status === 'DRAFT' && version.snapshot);
 
@@ -102,6 +114,7 @@ export default function Products({ organizationId, permissions = [], notify }) {
   }, [dirty]);
 
   async function loadList(nextSelected = selectedId) {
+    const ticket = ++listTicket.current;
     setLoading(true);
     setError('');
     try {
@@ -109,26 +122,34 @@ export default function Products({ organizationId, permissions = [], notify }) {
       if (query.trim()) params.set('q', query.trim());
       if (typeFilter) params.set('productType', typeFilter);
       if (statusFilter) params.set('status', statusFilter);
-      const page = await listProducts(params.toString() ? `?${params}` : '');
-      setItems(page.items);
-      const id = page.items.some((item) => item.id === nextSelected) ? nextSelected : page.items[0]?.id || '';
+      params.set('page', String(page));
+      params.set('pageSize', String(pageSize));
+      params.set('sortBy', sortBy);
+      params.set('sortDirection', sortDirection);
+      const result = await listProducts(`?${params}`);
+      if (ticket !== listTicket.current) return;
+      setItems(result.items);
+      setTotal(result.total);
+      const id = result.items.some((item) => item.id === nextSelected) ? nextSelected : result.items[0]?.id || '';
       setSelectedId(id);
-      if (id) await loadProduct(id);
-      else { setProduct(null); setVersions([]); setIcps([]); setDocuments([]); }
+      if (id) await loadProduct(id, ticket);
+      else if (ticket === listTicket.current) { setProduct(null); setVersions([]); setIcps([]); setDocuments([]); }
     } catch (cause) {
+      if (ticket !== listTicket.current) return;
       setError(cause.message);
     } finally {
-      setLoading(false);
+      if (ticket === listTicket.current) setLoading(false);
     }
   }
 
-  async function loadProduct(id) {
+  async function loadProduct(id, ticket = listTicket.current) {
     const [detail, versionRows, icpRows, docs] = await Promise.all([
       getProduct(id),
       listProductVersions(id),
       listIcps(id).catch(() => []),
       listKnowledge(id),
     ]);
+    if (ticket !== listTicket.current) return;
     setProduct(detail);
     setVersions(versionRows);
     setIcps(icpRows);
@@ -151,7 +172,8 @@ export default function Products({ organizationId, permissions = [], notify }) {
     setPositioning({
       valuePropositions: (position.valuePropositions || []).join('\n'),
       capabilities: (position.capabilities || []).join('\n'),
-      tone: position.tone || '',
+        qualificationQuestions: (position.qualificationQuestions || []).join('\n'),
+        tone: position.tone || '',
       brandVoice: position.brandVoice || '',
       restrictedClaims: (position.restrictedClaims || []).join('\n'),
       escalationConditions: (position.escalationConditions || []).join('\n'),
@@ -171,6 +193,12 @@ export default function Products({ organizationId, permissions = [], notify }) {
     return undefined;
   }, [organizationId]);
 
+  useEffect(() => {
+    if (!organizationId) return undefined;
+    loadList(selectedId);
+    return undefined;
+  }, [page, pageSize, sortBy, sortDirection]);
+
   function mark(setter) {
     return (event) => { setter(event.target.type === 'checkbox' ? event.target.checked : event.target.value); setDirty(true); };
   }
@@ -178,10 +206,10 @@ export default function Products({ organizationId, permissions = [], notify }) {
   async function run(work, success) {
     setBusy(true);
     try {
-      await work();
+      const created = await work();
       if (success) notify(success);
       setDirty(false);
-      await loadList(selectedId);
+      await loadList(created && typeof created === 'object' && created.id ? created.id : selectedId);
     } catch (cause) {
       notify(cause.message);
     } finally {
@@ -206,6 +234,7 @@ export default function Products({ organizationId, permissions = [], notify }) {
         ...draft.snapshot.positioning,
         valuePropositions: lines(positioning.valuePropositions),
         capabilities: lines(positioning.capabilities),
+        qualificationQuestions: lines(positioning.qualificationQuestions),
         tone: positioning.tone,
         brandVoice: positioning.brandVoice,
         restrictedClaims: lines(positioning.restrictedClaims),
@@ -226,7 +255,13 @@ export default function Products({ organizationId, permissions = [], notify }) {
           <label className="inline-search" htmlFor="product-search">Search<input id="product-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, category, or description" /></label>
           <label htmlFor="product-type-filter">Type<select id="product-type-filter" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="">All types</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label htmlFor="product-status-filter">Status<select id="product-status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="ACTIVE">Active</option><option value="ARCHIVED">Archived</option></select></label>
+          <label htmlFor="product-sort">Sort<select id="product-sort" value={`${sortBy}:${sortDirection}`} onChange={(event) => { const [field, direction] = event.target.value.split(':'); setSortBy(field); setSortDirection(direction); setPage(1); }}><option value="updatedAt:desc">Updated</option><option value="name:asc">Name A–Z</option><option value="name:desc">Name Z–A</option><option value="productType:asc">Type</option><option value="createdAt:desc">Created</option></select></label>
+          <label htmlFor="product-page-size">Page size<select id="product-page-size" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
           <button className="btn" type="button" onClick={() => loadList(selectedId)}>Apply filters</button>
+          {canWrite && onWorkspace && <button className="btn btn-primary" type="button" onClick={() => onWorkspace('product', 'add').catch((cause) => notify(cause.message))}>Open add page</button>}
+          {onWorkspace && <button className="btn" type="button" onClick={() => onWorkspace('product_defaults', 'edit').catch((cause) => notify(cause.message))}>Organization defaults</button>}
+          <button className="btn" type="button" onClick={() => loadList(selectedId)}>Refresh</button>
+          {canWrite && selectedIds.length > 0 && <button className="btn btn-danger" type="button" onClick={() => setConfirm({ kind: 'bulk-archive', ids: selectedIds, name: `${selectedIds.length} products` })}>Archive selected</button>}
         </div>
         {error && <p className="product-error" role="alert">{error}</p>}
         {loading && <p className="product-note">Loading products…</p>}
@@ -250,17 +285,22 @@ export default function Products({ organizationId, permissions = [], notify }) {
       <div className="product-layout">
         <div className="product-list" aria-label="Products">
           {items.map((item) => (
-            <button key={item.id} type="button" className={`product-row ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { if (dirty && !window.confirm('Leave this product with unsaved changes?')) return; setSelectedId(item.id); setDirty(false); loadProduct(item.id).catch((cause) => setError(cause.message)); }}>
-              <b>{item.name}</b>
-              <small>{TYPES.find(([value]) => value === item.productType)?.[1] || item.productType} · {item.status}</small>
-            </button>
+            <div key={item.id} className={`product-row ${item.id === selectedId ? 'selected' : ''}`}>
+              <input type="checkbox" aria-label={`Select ${item.name}`} checked={selectedIds.includes(item.id)} onChange={(event) => setSelectedIds(event.target.checked ? [...selectedIds, item.id] : selectedIds.filter((id) => id !== item.id))} />
+              <button type="button" className={item.id === selectedId ? 'selected' : ''} onClick={() => { if (dirty && !window.confirm('Leave this product with unsaved changes?')) return; setSelectedId(item.id); setDirty(false); setTab('Details'); loadProduct(item.id).catch((cause) => setError(cause.message)); }}>
+                <b>{item.name}</b>
+                <small>{TYPES.find(([value]) => value === item.productType)?.[1] || item.productType} · {item.status}</small>
+              </button>
+            </div>
           ))}
+          <div className="mgmt-toolbar"><button className="btn" type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page} · {total} products</span><button className="btn" type="button" disabled={page * pageSize >= total} onClick={() => setPage(page + 1)}>Next</button></div>
         </div>
         <section className="panel">
           {!product && <p className="product-note">Select a product to view its live configuration.</p>}
           {product && (
             <>
               <div className="panel-head"><div><h3>{product.name}</h3><p>{product.status === 'ARCHIVED' ? 'Archived' : 'Active'} · {product.currency}</p></div><span className="badge badge-green">LIVE DATA</span></div>
+              {onWorkspace && <div className="actions"><button className="btn" type="button" onClick={() => onWorkspace('product', 'view', { resourceId: product.id }).catch((cause) => notify(cause.message))}>Open product details</button>{canWrite && <button className="btn" type="button" onClick={() => onWorkspace('product', 'edit', { resourceId: product.id }).catch((cause) => notify(cause.message))}>Open product editor</button>}</div>}
               <div className="product-tabs" role="tablist">{TABS.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} className={tab === name ? 'active' : ''} onClick={() => { if (dirty && !window.confirm('Switch sections with unsaved changes?')) return; setTab(name); }}>{name}</button>)}</div>
               {tab === 'Details' && (
                 <form className="product-form" onSubmit={(event) => { event.preventDefault(); run(() => updateProduct(product.id, { ...detailForm, tags: splitList(detailForm.tags), targetMarkets: splitList(detailForm.targetMarkets), languages: splitList(detailForm.languages) }), 'Product saved.'); }}>
@@ -277,7 +317,7 @@ export default function Products({ organizationId, permissions = [], notify }) {
                   <div className="actions wide">
                     {canWrite && <button className="btn btn-primary" type="submit" disabled={busy}>Save product</button>}
                     {canWrite && <button className="btn" type="button" onClick={() => run(() => duplicateProduct(product.id), 'Product duplicated.')}>Duplicate</button>}
-                    {canWrite && product.status === 'ACTIVE' && <button className="btn" type="button" onClick={() => run(() => archiveProduct(product.id), 'Product archived.')}>Archive</button>}
+                    {canWrite && product.status === 'ACTIVE' && <button className="btn" type="button" onClick={() => setConfirm({ kind: 'archive', id: product.id, name: product.name })}>Archive</button>}
                     {canWrite && product.status === 'ARCHIVED' && <button className="btn" type="button" onClick={() => run(() => restoreProduct(product.id), 'Product restored.')}>Restore</button>}
                   </div>
                 </form>
@@ -300,6 +340,7 @@ export default function Products({ organizationId, permissions = [], notify }) {
                 <form className="product-form" onSubmit={(event) => { event.preventDefault(); run(() => updateProductVersion(product.id, draft.id, draftPayload()), 'Draft positioning saved.'); }}>
                   <label className="wide" htmlFor="value-props">Value propositions<textarea id="value-props" value={positioning.valuePropositions} onChange={mark((value) => setPositioning({ ...positioning, valuePropositions: value }))} disabled={!canWrite || !draft} /></label>
                   <label className="wide" htmlFor="capabilities">Supported capabilities<textarea id="capabilities" value={positioning.capabilities} onChange={mark((value) => setPositioning({ ...positioning, capabilities: value }))} disabled={!canWrite || !draft} /></label>
+                  <label className="wide" htmlFor="qualification-questions">Qualification questions<textarea id="qualification-questions" value={positioning.qualificationQuestions} onChange={mark((value) => setPositioning({ ...positioning, qualificationQuestions: value }))} disabled={!canWrite || !draft} /></label>
                   <label htmlFor="tone">Communication tone<input id="tone" value={positioning.tone} onChange={mark((value) => setPositioning({ ...positioning, tone: value }))} disabled={!canWrite || !draft} /></label>
                   <label htmlFor="brand-voice">Brand voice<input id="brand-voice" value={positioning.brandVoice} onChange={mark((value) => setPositioning({ ...positioning, brandVoice: value }))} disabled={!canWrite || !draft} /></label>
                   <label className="wide" htmlFor="restricted">Restricted claims<textarea id="restricted" value={positioning.restrictedClaims} onChange={mark((value) => setPositioning({ ...positioning, restrictedClaims: value }))} disabled={!canWrite || !draft} /></label>
@@ -316,7 +357,7 @@ export default function Products({ organizationId, permissions = [], notify }) {
                     <form className="product-form" onSubmit={(event) => { event.preventDefault(); run(() => addIcp(product.id, { name: icpName, priority: icps.length + 1, industries: lines(icpIndustries), countries: ['US'], languages: ['en'] }), 'ICP added.'); }}>
                       <label htmlFor="icp-name">ICP name<input id="icp-name" required value={icpName} onChange={(event) => setIcpName(event.target.value)} /></label>
                       <label htmlFor="icp-industries">Target industries<textarea id="icp-industries" value={icpIndustries} onChange={(event) => setIcpIndustries(event.target.value)} /></label>
-                      <div className="actions wide"><button className="btn btn-primary" type="submit">Add ICP</button></div>
+                      <div className="actions wide"><button className="btn btn-primary" type="submit">Add ICP</button>{onWorkspace && <button className="btn" type="button" onClick={() => onWorkspace('icp', 'add', { parentId: product.id }).catch((cause) => notify(cause.message))}>Open ICP page</button>}</div>
                     </form>
                   )}
                 </div>
@@ -341,9 +382,10 @@ export default function Products({ organizationId, permissions = [], notify }) {
                 <div>
                   {canWrite && <form onSubmit={async (event) => { event.preventDefault(); const file = event.currentTarget.elements.file.files?.[0]; if (!file) return; const contentBase64 = await fileToBase64(file); await run(async () => { const saved = await uploadKnowledge(product.id, { fileName: file.name, contentBase64 }); if (saved.status === 'FAILED') throw new Error(saved.failureReason || 'Document processing failed'); }, savedStatus(file.name)); }}>
                     <label htmlFor="knowledge-file">Knowledge file<input id="knowledge-file" name="file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm" /></label>
-                    <button className="btn btn-primary" type="submit">Upload document</button>
+                    <button className="btn btn-primary" type="submit">Upload document</button>{onWorkspace && <button className="btn" type="button" onClick={() => onWorkspace('knowledge_document', 'add', { parentId: product.id }).catch((cause) => notify(cause.message))}>Open knowledge page</button>}
                   </form>}
-                  <table className="data-table"><thead><tr><th>File</th><th>Status</th><th>Semantic index</th><th></th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{document.fileName}{document.failureReason ? <small>{document.failureReason}</small> : null}</td><td>{document.status}</td><td>{document.semanticStatus === 'INDEXED' ? 'Indexed' : 'Keyword only'}</td><td>{canApprove && document.status === 'PENDING_APPROVAL' && <button className="btn" type="button" onClick={() => run(() => reviewKnowledge(product.id, document.id, 'approve'), 'Document approved.')}>Approve document</button>} <button className="btn" type="button" onClick={() => downloadKnowledge(product.id, document.id, document.fileName).catch((cause) => notify(cause.message))}>Download</button></td></tr>)}</tbody></table>
+                  <div className="toolbar"><label htmlFor="document-status">Document status<select id="document-status" value={docStatus} onChange={(event) => setDocStatus(event.target.value)}><option value="">All</option><option value="PENDING_APPROVAL">Pending approval</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option><option value="FAILED">Failed</option></select></label><label htmlFor="document-sort">Document sort<select id="document-sort" value={docSort} onChange={(event) => setDocSort(event.target.value)}><option value="createdAt:desc">Newest</option><option value="fileName:asc">File name</option><option value="status:asc">Status</option></select></label><button className="btn" type="button" onClick={async () => { const [sortField, direction] = docSort.split(':'); try { const result = await managementRequest('knowledge/list', { productId: product.id, status: docStatus || undefined, sortBy: sortField, sortDirection: direction, q: searchText || undefined, page: 1, pageSize: 20 }); setDocuments(result.items); } catch (cause) { notify(cause.message); } }}>Apply document filters</button></div>
+                  <table className="data-table"><thead><tr><th>File</th><th>Status</th><th>Semantic index</th><th></th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{document.fileName}{document.failureReason ? <small>{document.failureReason}</small> : null}</td><td>{document.status}</td><td>{document.semanticStatus === 'INDEXED' ? 'Indexed' : 'Keyword only'}</td><td>{canApprove && document.status === 'PENDING_APPROVAL' && <button className="btn" type="button" onClick={() => run(() => reviewKnowledge(product.id, document.id, 'approve'), 'Document approved.')}>Approve document</button>} <button className="btn" type="button" onClick={() => downloadKnowledge(product.id, document.id, document.fileName).catch((cause) => notify(cause.message))}>Download</button>{canWrite && <button className="btn btn-danger" type="button" onClick={() => setConfirm({ kind: 'delete-document', id: document.id, name: document.fileName })}>Delete</button>}</td></tr>)}</tbody></table>
                   <form className="toolbar" onSubmit={async (event) => { event.preventDefault(); setBusy(true); try { setSearchResult(await searchKnowledge(product.id, { query: searchText, mode: searchMode })); } catch (cause) { notify(cause.message); } finally { setBusy(false); } }}>
                     <label htmlFor="knowledge-query">Search approved knowledge<input id="knowledge-query" value={searchText} onChange={(event) => setSearchText(event.target.value)} /></label>
                     <label htmlFor="knowledge-mode">Mode<select id="knowledge-mode" value={searchMode} onChange={(event) => setSearchMode(event.target.value)}><option value="keyword">Keyword</option><option value="semantic">Semantic</option></select></label>
@@ -362,6 +404,13 @@ export default function Products({ organizationId, permissions = [], notify }) {
           )}
         </section>
       </div>
+      {confirm && <ConfirmDialog title={confirm.kind === 'delete-document' ? 'Delete document' : 'Archive product'} body={confirm.kind === 'delete-document' ? `Delete ${confirm.name}? Retention rules still apply. A published citation stops using the file after it is removed.` : `Archive ${confirm.name}? Archived products stay recoverable and published versions are not deleted.`} confirmLabel={confirm.kind === 'delete-document' ? 'Delete document' : 'Archive'} busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => {
+        const action = confirm;
+        setConfirm(null);
+        if (action.kind === 'archive') run(() => archiveProduct(action.id), 'Product archived.');
+        if (action.kind === 'bulk-archive') run(async () => { const result = await managementRequest('products/bulk-archive', { ids: action.ids }); const failed = result.results.filter((item) => !item.ok); if (failed.length) throw new Error(`${failed.length} products could not be archived`); setSelectedIds([]); }, 'Selected products archived.');
+        if (action.kind === 'delete-document') run(() => managementRequest('knowledge/delete', { productId: product.id, id: action.id }), 'Document deleted.');
+      }} />}
     </div>
   );
 }

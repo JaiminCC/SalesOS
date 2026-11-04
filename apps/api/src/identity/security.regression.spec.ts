@@ -66,8 +66,12 @@ describe.skipIf(!process.env.DATABASE_URL || !process.env.DATABASE_URL_IDENTITY 
       expect(downgraded.status).toBe(204);
       expect((await get('/api/v1/auth/me').set('Cookie', adminCookie)).status).toBe(401);
       const adminAgain = await post('/api/v1/auth/login').send({ email: adminEmail, password });
-      expect(adminAgain.body.data.permissions).not.toContain('users.manage');
-      expect(adminAgain.body.data.permissions).not.toContain('roles.manage');
+      expect(adminAgain.status).toBe(200);
+      const againCookie = pair(sessionCookie(adminAgain));
+      expect((await post(`/api/v1/organizations/${org}/switch`).set('Cookie', againCookie)).status).toBe(204);
+      const downgradedSession = await get('/api/v1/auth/me').set('Cookie', againCookie);
+      expect(downgradedSession.body.data.permissions).not.toContain('users.manage');
+      expect(downgradedSession.body.data.permissions).not.toContain('roles.manage');
 
       await verifiedUser(viewerEmail);
       await post(`/api/v1/organizations/${org}/invitations`).set('Cookie', ownerCookie).send({ email: viewerEmail, role: 'VIEWER' });

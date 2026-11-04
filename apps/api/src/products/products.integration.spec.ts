@@ -78,6 +78,9 @@ describe.skipIf(!process.env.DATABASE_URL || !process.env.DATABASE_URL_APP || !p
       expect(archivedDraft.body.data.status).toBe('ARCHIVED');
       const filtered = await get('/api/v1/products?q=Field&productType=PHYSICAL&status=ACTIVE').set('Cookie', ownerCookie);
       expect(filtered.body.data.items.map((item: { name: string }) => item.name)).toEqual(['Field Kit']);
+      const sorted = await get('/api/v1/products?status=ACTIVE&page=1&pageSize=20&sortBy=updatedAt&sortDirection=desc').set('Cookie', ownerCookie);
+      expect(sorted.status).toBe(200);
+      expect(sorted.body.data.items.some((item: { name: string }) => item.name === 'Field Kit')).toBe(true);
       const hidden = await get(`/api/v1/products/${productId}`).set('Cookie', otherCookie);
       expect(hidden.status).toBe(404);
       const copy = await post(`/api/v1/products/${productId}/duplicate`).set('Cookie', ownerCookie);

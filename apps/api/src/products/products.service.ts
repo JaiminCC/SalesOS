@@ -34,6 +34,7 @@ import {
   type ProductVersionStatus,
 } from '@salesos/shared';
 import { ApiException } from '../common/api.exception';
+import { runBatch } from '../common/batch';
 import { AppConfig } from '../config/app-config';
 import type { SessionContext } from '../identity/identity.service';
 import { IdentityDatabase } from '../identity/identity-database.service';
@@ -129,30 +130,32 @@ export class ProductsService {
 
   async list(actor: SessionContext, query: ListProductsQuery) {
     const tenantId = this.tenant(actor);
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
+    const page = Number(query.page ?? 1);
+    const pageSize = Number(query.pageSize ?? 20);
     return withTenant(this.database.prisma, tenantId, async (tx) => {
       const where = {
         tenantId,
         status: query.status ?? 'ACTIVE',
-        productType: query.productType,
-        OR: query.q
-          ? [
-              { name: { contains: query.q, mode: 'insensitive' as const } },
-              { category: { contains: query.q, mode: 'insensitive' as const } },
-              { shortDescription: { contains: query.q, mode: 'insensitive' as const } },
-            ]
-          : undefined,
+        ...(query.productType ? { productType: query.productType } : {}),
+        ...(query.q
+          ? {
+              OR: [
+                { name: { contains: query.q, mode: 'insensitive' as const } },
+                { category: { contains: query.q, mode: 'insensitive' as const } },
+                { shortDescription: { contains: query.q, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
       };
-      const [total, rows] = await Promise.all([
-        tx.product.count({ where }),
-        tx.product.findMany({
-          where,
-          orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-        }),
-      ]);
+      const sortField = query.sortBy ?? 'updatedAt';
+      const sortDirection = query.sortDirection ?? 'desc';
+      const total = await tx.product.count({ where });
+      const rows = await tx.product.findMany({
+        where,
+        orderBy: [{ [sortField]: sortDirection }, { id: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      });
       return { items: rows.map(publicProduct), page, pageSize, total };
     });
   }
@@ -201,6 +204,9 @@ export class ProductsService {
     const tenantId = this.tenant(actor);
     return withTenant(this.database.prisma, tenantId, async (tx) => {
       const current = await this.writableProduct(tx, tenantId, productId);
+      if (input.expectedUpdatedAt && new Date(input.expectedUpdatedAt).getTime() !== current.updatedAt.getTime()) {
+        throw new ApiException(409, 'CONFLICT', 'This record changed since you opened it. Reload and try again.');
+      }
       const currency = input.currency ? normalizeCurrency(input.currency) : current.currency.trim();
       const product = await tx.product.update({
         where: { tenantId_id: { tenantId, id: productId } },
@@ -263,10 +269,8 @@ export class ProductsService {
     const tenantId = this.tenant(actor);
     return withTenant(this.database.prisma, tenantId, async (tx) => {
       await this.product(tx, tenantId, productId);
-      const [versions, documents] = await Promise.all([
-        tx.productVersion.findMany({ where: { tenantId, productId }, select: { id: true } }),
-        tx.knowledgeDocument.findMany({ where: { tenantId, productId }, select: { id: true } }),
-      ]);
+      const versions = await tx.productVersion.findMany({ where: { tenantId, productId }, select: { id: true } });
+      const documents = await tx.knowledgeDocument.findMany({ where: { tenantId, productId }, select: { id: true } });
       const entityIds = [productId, ...versions.map((row) => row.id), ...documents.map((row) => row.id)];
       const events = await tx.auditEvent.findMany({
         where: { tenantId, entityId: { in: entityIds } },
@@ -479,6 +483,9 @@ export class ProductsService {
     const pricing = input.pricing ? pricingSchema.partial().parse(input.pricing) : undefined;
     return withTenant(this.database.prisma, tenantId, async (tx) => {
       const current = await tx.organizationProductDefault.findUnique({ where: { tenantId } });
+      if (input.expectedUpdatedAt && (!current || new Date(input.expectedUpdatedAt).getTime() !== current.updatedAt.getTime())) {
+        throw new ApiException(409, 'CONFLICT', 'This record changed since you opened it. Reload and try again.');
+      }
       const row = await tx.organizationProductDefault.upsert({
         where: { tenantId },
         create: {
@@ -859,6 +866,92 @@ export class ProductsService {
     return rows.map((row) => citation({ ...row, score: null }));
   }
 
+  async getIcp(actor: SessionContext, productId: string, icpId: string) {
+    const rows = await this.listIcps(actor, productId);
+    const icp = rows.find((row) => row.id === icpId);
+    if (!icp) throw new ApiException(404, 'NOT_FOUND', 'ICP was not found');
+    return icp;
+  }
+
+  async documentPage(actor: SessionContext, productId: string, query: DocumentPageQuery) {
+    const tenantId = this.tenant(actor);
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const sorts = { fileName: 'fileName', status: 'status', createdAt: 'createdAt', updatedAt: 'updatedAt' } as const;
+    const sortField = sorts[query.sortBy ?? 'createdAt'];
+    const sortDirection = query.sortDirection ?? 'desc';
+    return withTenant(this.database.prisma, tenantId, async (tx) => {
+      await this.product(tx, tenantId, productId);
+      const status = query.status === 'DELETED' && !actor.permissions.includes('products.write')
+        ? { not: 'DELETED' as const }
+        : query.status ?? { not: 'DELETED' as const };
+      const fileName = query.q || query.fileType
+        ? { contains: query.q || undefined, endsWith: query.fileType ? `.${query.fileType}` : undefined, mode: 'insensitive' as const }
+        : undefined;
+      const where = {
+        tenantId,
+        productId,
+        status,
+        fileName,
+        createdAt: query.createdAfter || query.createdBefore
+          ? { gte: query.createdAfter ? new Date(query.createdAfter) : undefined, lte: query.createdBefore ? new Date(query.createdBefore) : undefined }
+          : undefined,
+      };
+      const total = await tx.knowledgeDocument.count({ where });
+      const rows = await tx.knowledgeDocument.findMany({
+        where,
+        orderBy: [{ [sortField]: sortDirection }, { id: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      });
+      return { items: rows.map(publicDocument), page, pageSize, total };
+    });
+  }
+
+  async versionPage(actor: SessionContext, productId: string, query: { page?: number; pageSize?: number; status?: string; sortDirection?: 'asc' | 'desc' }) {
+    const versions = await this.listVersions(actor, productId);
+    const filtered = query.status ? versions.filter((version) => version.status === query.status) : versions;
+    const direction = query.sortDirection === 'asc' ? 1 : -1;
+    const sorted = [...filtered].sort((left, right) => direction * (left.versionNumber - right.versionNumber) || left.id.localeCompare(right.id));
+    return pageOf(sorted, query.page, query.pageSize);
+  }
+
+  async icpPage(actor: SessionContext, productId: string, query: { page?: number; pageSize?: number; q?: string; archived?: boolean; sortBy?: 'name' | 'priority'; sortDirection?: 'asc' | 'desc' }) {
+    const rows = await this.listIcps(actor, productId);
+    const filtered = rows.filter((icp) => {
+      if (query.archived === false && icp.archived) return false;
+      if (query.archived === true && !icp.archived) return false;
+      if (!query.q) return true;
+      return icp.name.toLowerCase().includes(query.q.toLowerCase());
+    });
+    const direction = query.sortDirection === 'desc' ? -1 : 1;
+    const sorted = [...filtered].sort((left, right) => {
+      const primary = query.sortBy === 'name' ? left.name.localeCompare(right.name) : left.priority - right.priority;
+      return direction * primary || left.id.localeCompare(right.id);
+    });
+    return pageOf(sorted, query.page, query.pageSize);
+  }
+
+  bulkArchive(actor: SessionContext, ids: string[], requestId: string) {
+    return runBatch(ids, (id) => this.archive(actor, id, requestId));
+  }
+
+  bulkRestore(actor: SessionContext, ids: string[], requestId: string) {
+    return runBatch(ids, (id) => this.restore(actor, id, requestId));
+  }
+
+  bulkArchiveIcps(actor: SessionContext, productId: string, ids: string[], requestId: string) {
+    return runBatch(ids, (id) => this.archiveIcp(actor, productId, id, requestId));
+  }
+
+  bulkRemoveDocuments(actor: SessionContext, productId: string, ids: string[], requestId: string) {
+    return runBatch(ids, (id) => this.removeDocument(actor, productId, id, requestId));
+  }
+
+  bulkApproveDocuments(actor: SessionContext, productId: string, ids: string[], requestId: string) {
+    return runBatch(ids, (id) => this.reviewDocument(actor, productId, id, 'APPROVED', requestId));
+  }
+
   private async setProductStatus(actor: SessionContext, productId: string, status: 'ACTIVE' | 'ARCHIVED', requestId: string) {
     const tenantId = this.tenant(actor);
     return withTenant(this.database.prisma, tenantId, async (tx) => {
@@ -1116,11 +1209,12 @@ function publicDocument(row: DocumentRecord) {
   };
 }
 
-function publicDefaults(row: { positioning: Prisma.JsonValue; pricing: Prisma.JsonValue; knowledgeRetentionDays: number } | null) {
+function publicDefaults(row: { positioning: Prisma.JsonValue; pricing: Prisma.JsonValue; knowledgeRetentionDays: number; updatedAt?: Date } | null) {
   return {
     positioning: row?.positioning ?? {},
     pricing: row?.pricing ?? {},
     knowledgeRetentionDays: row?.knowledgeRetentionDays ?? 0,
+    updatedAt: row?.updatedAt ?? null,
     inheritance: 'Product values replace organization defaults when the product field is non-empty. Untouched product pricing uses the organization pricing default. ICP definitions belong to the product version.',
   };
 }
@@ -1135,6 +1229,25 @@ function citation(row: { id: string; document_id: string; file_name: string; pag
     content: row.content,
     score: row.score,
   };
+}
+
+type DocumentPageQuery = {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+  fileType?: string;
+  sortBy?: 'fileName' | 'status' | 'createdAt' | 'updatedAt';
+  sortDirection?: 'asc' | 'desc';
+  createdAfter?: string;
+  createdBefore?: string;
+};
+
+function pageOf<T>(rows: T[], page = 1, pageSize = 20) {
+  const size = Math.min(Math.max(pageSize, 1), 100);
+  const current = Math.max(page, 1);
+  const start = (current - 1) * size;
+  return { items: rows.slice(start, start + size), page: current, pageSize: size, total: rows.length };
 }
 
 function intersect(left: string[], right: string[] | undefined): string[] {
