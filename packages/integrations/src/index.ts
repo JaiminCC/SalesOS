@@ -1,3 +1,5 @@
+export { gmailSendCapability, graphSendCapability, reconcileGmail, reconcileGraph, sendWithGmail, sendWithGraph } from './email-send';
+export type { OutboundMessage, ProviderSendResult, SendCapability } from './email-send';
 export { NotConfiguredError } from './errors';
 export { exchangeOAuthCode, webhookAuthentic, webhookSignature, readGmailPage } from './mailbox';
 export { readProviderPage, refreshOAuthToken } from './provider-read';

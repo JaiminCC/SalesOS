@@ -1,12 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { writeSync } from 'node:fs';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import {
   classifyIntent,
   draftDigest,
   evaluateEligibility,
   evaluateQuietHours,
   evaluateSendGate,
+  headerSafe,
+  normalizeOutboundRecipients,
+  sendScopeGranted,
   plainText,
   resolveThreadKey,
   sanitizeEmailHtml,
@@ -108,10 +111,10 @@ export async function syncMailbox(prisma: PrismaClient, actor: Actor, connection
   }
 }
 
-export async function saveDraft(prisma: PrismaClient, actor: Actor, input: { id?: string; connectionId: string; threadId?: string; subject: string; body: string; recipients: string[]; aiGenerated?: boolean; runId?: string; productVersionId?: string | null; citations?: unknown }): Promise<{ id: string; version: number; status: string; digest: string }> {
+export async function saveDraft(prisma: PrismaClient, actor: Actor, input: { id?: string; connectionId: string; threadId?: string; subject: string; body: string; recipients: string[]; cc?: string[]; bcc?: string[]; aiGenerated?: boolean; runId?: string; productVersionId?: string | null; citations?: unknown }): Promise<{ id: string; version: number; status: string; digest: string }> {
   return withTenant(prisma, actor.tenantId, async (tx) => {
     if (!(await canAccess(tx, actor, input.connectionId, 'DRAFT'))) throw new Error('FORBIDDEN');
-    const digest = draftDigest({ sender: '', recipients: input.recipients, subject: input.subject, body: input.body, attachments: [] });
+    const digest = draftDigest({ sender: '', recipients: input.recipients, cc: input.cc ?? [], bcc: input.bcc ?? [], subject: input.subject, body: input.body, attachments: [] });
     const existing = input.id ? await tx.mailboxDraft.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: input.id } } }) : null;
     const draft = existing ?? await tx.mailboxDraft.create({
       data: {
@@ -134,6 +137,8 @@ export async function saveDraft(prisma: PrismaClient, actor: Actor, input: { id?
         subject: input.subject,
         body: input.body,
         recipients: input.recipients,
+        cc: input.cc ?? [],
+        bcc: input.bcc ?? [],
         bodySha256: digest,
         aiGenerated: input.aiGenerated === true,
         runId: input.runId,
@@ -193,50 +198,125 @@ export async function reviewDraft(prisma: PrismaClient, actor: Actor, draftId: s
   });
 }
 
-export async function sendDraft(prisma: PrismaClient, actor: Actor, draftId: string, liveSendEnabled: boolean): Promise<{ state: string; sent: false; reasons: string[] }> {
+export type OutboundDelivery = {
+  acceptance: 'ACCEPTED' | 'REJECTED' | 'UNKNOWN';
+  providerMessageId: string | null;
+  threadId: string | null;
+  httpStatus: number | null;
+  correlationId: string;
+  retryable: boolean;
+};
+
+export async function sendDraft(prisma: PrismaClient, actor: Actor, draftId: string, liveSendEnabled: boolean, deliver?: (input: { provider: string; token: string; from: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; body: string; threadRef: string }) => Promise<OutboundDelivery>, beforeDispatch?: () => Promise<void>): Promise<{ state: string; sent: false; reasons: string[] }> {
   const prepared = await withTenant(prisma, actor.tenantId, async (tx) => {
     const draft = await tx.mailboxDraft.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: draftId } } });
     if (!draft) throw new Error('NOT_FOUND');
     const version = await tx.mailboxDraftVersion.findFirst({ where: { tenantId: actor.tenantId, draftId, version: draft.currentVersion } });
     const approval = version ? await tx.mailboxApproval.findFirst({ where: { tenantId: actor.tenantId, draftVersionId: version.id, decision: 'APPROVED' }, orderBy: { createdAt: 'desc' } }) : null;
     const connection = await tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: draft.connectionId } } });
+    const policy = await tx.emailSendPolicy.findUnique({ where: { tenantId: actor.tenantId } });
     const facts = await sendFacts(tx, actor, draft.threadId, draft.connectionId);
-    const prior = version ? await tx.mailboxSendAttempt.findFirst({ where: { tenantId: actor.tenantId, draftVersionId: version.id, state: { in: ['CAPTURED', 'ACCEPTED_BY_PROVIDER', 'DELIVERY_UNKNOWN'] } } }) : null;
+    const prior = version ? await tx.mailboxSendAttempt.findFirst({ where: { tenantId: actor.tenantId, draftVersionId: version.id, state: { in: ['CAPTURED', 'IN_FLIGHT', 'PROVIDER_ACCEPTED', 'DELIVERY_UNKNOWN', 'ACCEPTED_BY_PROVIDER', 'SENT_ITEM_CONFIRMED'] } } }) : null;
+    const normalized = normalizeOutboundRecipients([
+      Array.isArray(version?.recipients) ? version.recipients.map(String) : [],
+      Array.isArray(version?.cc) ? version.cc.map(String) : [],
+      Array.isArray(version?.bcc) ? version.bcc.map(String) : [],
+    ]);
+    const recipients = normalized.recipients;
+    const injected = !headerSafe(version?.subject ?? '') || !headerSafe(connection?.address ?? '') || normalized.invalid;
+    const scopes = Array.isArray(connection?.scopes) ? connection.scopes.map(String) : [];
+    const contactPolicy = await tx.crmContactPolicy.findUnique({ where: { tenantId: actor.tenantId } });
+    const contactKey = recipients[0] ?? '';
+    const intervalHours = contactPolicy?.minimumIntervalHours ?? 24;
+    const recentContact = contactKey && intervalHours > 0
+      ? await tx.emailSendReservation.count({ where: { tenantId: actor.tenantId, contactKey, state: { in: HOLDING_QUOTA }, createdAt: { gt: new Date(Date.now() - intervalHours * 60 * 60 * 1000) } } })
+      : 0;
+    const todayCount = contactKey ? await tx.emailSendReservation.count({ where: { tenantId: actor.tenantId, contactKey, dayStart: utcWindows().dayStart, state: { in: HOLDING_QUOTA } } }) : 0;
     const gate = evaluateSendGate({
       ...facts,
+      connectionReadable: Boolean(connection) && connection?.status !== 'DISCONNECTED',
+      frequencyBlocked: facts.frequencyBlocked || recentContact > 0 || ((contactPolicy?.maxAttempts ?? 3) > 0 && todayCount >= (contactPolicy?.maxAttempts ?? 3)),
+      contentBlocked: facts.contentBlocked || injected,
       approvalMatches: Boolean(approval && version && approval.payloadSha256 === version.bodySha256),
       approvalExpired: Boolean(approval && approval.expiresAt.getTime() < Date.now()),
-      duplicateAccepted: Boolean(prior),
+      duplicateAccepted: Boolean(prior) || Boolean(version && await tx.emailSendReservation.findUnique({ where: { tenantId_draftVersionId: { tenantId: actor.tenantId, draftVersionId: version.id } } })),
+      rateLimited: await quotaLimited(tx, actor.tenantId, draft.connectionId, actor.userId, policy),
+      recipientLimitExceeded: Boolean(policy && recipients.length > policy.maxRecipients),
       liveSendEnabled,
-      tenantSendingEnabled: connection?.sendingEnabled === true,
+      tenantSendingEnabled: policy?.enabled === true && policy.killSwitch !== true,
+      mailboxSendingEnabled: connection?.sendingEnabled === true && connection.sendCapability === 'SEND_AUTHORIZED',
+      killSwitch: policy?.killSwitch === true,
+      providerReady: connection?.provider === 'google' || connection?.provider === 'microsoft' || connection?.provider === 'test',
       humanAction: true,
-      captureMailbox: connection?.provider === 'capture',
-      sendScope: false,
-      senderAllowed: await canAccess(tx, actor, draft.connectionId, 'DRAFT') && await hasPermission(tx, actor.tenantId, actor.userId, 'mailbox.send'),
+      captureMailbox: connection?.provider === 'capture' || connection?.provider === 'manual',
+      sendScope: connection ? sendScopeGranted(connection.provider, scopes) || connection.provider === 'test' : false,
+      senderAllowed: await canAccess(tx, actor, draft.connectionId, 'SEND') && await hasPermission(tx, actor.tenantId, actor.userId, 'mailbox.send') && await hasPermission(tx, actor.tenantId, actor.userId, 'mailbox.send.execute'),
     });
-    return { draft, version, approval, connection, gate };
+    return { draft, version, approval, connection, gate, recipients, contactKey };
   });
   if (!prepared.version || !prepared.connection) return { state: 'FAILED_FINAL', sent: false, reasons: ['NOT_FOUND'] };
   if (prepared.gate.decision === 'BLOCK') {
     await recordAttempt(prisma, actor, prepared, 'FAILED_FINAL', prepared.gate.reasons.join(','));
     return { state: 'FAILED_FINAL', sent: false, reasons: prepared.gate.reasons };
   }
-  const attempt = await recordAttempt(prisma, actor, prepared, 'CAPTURED', 'CAPTURE_MODE');
-  return { state: attempt.state, sent: false, reasons: ['CAPTURE_MODE'] };
+  if (prepared.gate.decision === 'CAPTURE') {
+    const attempt = await recordAttempt(prisma, actor, prepared, 'CAPTURED', 'CAPTURE_MODE');
+    return { state: attempt.state, sent: false, reasons: ['CAPTURE_MODE'] };
+  }
+  if (!deliver) {
+    await recordAttempt(prisma, actor, prepared, 'READY', 'SEND_NOT_DISPATCHED');
+    return { state: 'READY', sent: false, reasons: ['SEND_NOT_DISPATCHED'] };
+  }
+  const claimed = await claimDispatch(prisma, actor, prepared);
+  if (!claimed.created) return { state: claimed.state, sent: false, reasons: claimed.reasons };
+  if (beforeDispatch) await beforeDispatch();
+  const fence = await assertDispatchFence(prisma, actor, prepared);
+  if (!fence.ok) {
+    await settleAttempt(prisma, actor, prepared, 'FAILED_FINAL', 'RELEASED', { acceptance: 'REJECTED', providerMessageId: null, threadId: null, httpStatus: null, correlationId: 'revoked-before-dispatch', retryable: false }, fence.reason);
+    return { state: 'FAILED_FINAL', sent: false, reasons: [fence.reason] };
+  }
+  let outcome: OutboundDelivery;
+  try {
+    const token = prepared.connection.accessTokenCiphertext ? decryptField(Buffer.from(prepared.connection.accessTokenCiphertext), actor.key) : '';
+    outcome = await deliver({
+      provider: prepared.connection.provider,
+      token,
+      from: prepared.connection.address,
+      to: prepared.recipients,
+      cc: Array.isArray(prepared.version.cc) ? prepared.version.cc.map(String) : [],
+      bcc: Array.isArray(prepared.version.bcc) ? prepared.version.bcc.map(String) : [],
+      subject: prepared.version.subject,
+      body: prepared.version.body,
+      threadRef: prepared.draft.threadId ?? '',
+    });
+  } catch {
+    outcome = { acceptance: 'UNKNOWN', providerMessageId: null, threadId: null, httpStatus: null, correlationId: 'interrupted', retryable: false };
+  }
+  const state = outcome.acceptance === 'ACCEPTED' ? 'PROVIDER_ACCEPTED' : outcome.acceptance === 'REJECTED' ? 'FAILED_FINAL' : 'DELIVERY_UNKNOWN';
+  const reservation = outcome.acceptance === 'ACCEPTED' ? 'ACCEPTED' : outcome.acceptance === 'REJECTED' ? 'RELEASED' : 'UNCERTAIN';
+  await settleAttempt(prisma, actor, prepared, state, reservation, outcome, outcome.acceptance);
+  return { state, sent: false, reasons: [outcome.acceptance] };
 }
 
-export async function reconcileSend(prisma: PrismaClient, actor: Actor, attemptId: string): Promise<{ state: string; sent: false }> {
-  return withTenant(prisma, actor.tenantId, async (tx) => {
+export async function reconcileSend(prisma: PrismaClient, actor: Actor, attemptId: string, lookup?: (input: { provider: string; token: string; providerMessageId: string }) => Promise<'SENT_ITEM_CONFIRMED' | 'DELIVERY_UNKNOWN'>): Promise<{ state: string; sent: false }> {
+  const loaded = await withTenant(prisma, actor.tenantId, async (tx) => {
     const attempt = await tx.mailboxSendAttempt.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: attemptId } } });
     if (!attempt) throw new Error('NOT_FOUND');
-    if (attempt.state === 'DELIVERY_UNKNOWN') {
-      await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId, kind: 'RECONCILE_UNRESOLVED', detail: { retry: false } } });
-      return { state: 'DELIVERY_UNKNOWN', sent: false as const };
+    const connection = await tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: attempt.connectionId } } });
+    return { attempt, connection };
+  });
+  let kind = 'RECONCILE_UNRESOLVED';
+  if (lookup && loaded.connection?.status !== 'DISCONNECTED' && loaded.attempt.providerMessageId && loaded.connection?.accessTokenCiphertext && loaded.attempt.state !== 'FAILED_FINAL') {
+    const token = decryptField(Buffer.from(loaded.connection.accessTokenCiphertext), actor.key);
+    const found = await lookup({ provider: loaded.attempt.provider, token, providerMessageId: loaded.attempt.providerMessageId }).catch(() => 'DELIVERY_UNKNOWN' as const);
+    kind = found === 'SENT_ITEM_CONFIRMED' ? 'SENT_ITEM_CONFIRMED' : 'RECONCILE_UNRESOLVED';
+  }
+  return withTenant(prisma, actor.tenantId, async (tx) => {
+    await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId, kind, detail: { retry: false, delivered: false, recipientDelivery: false } } });
+    if (kind === 'SENT_ITEM_CONFIRMED') {
+      await tx.mailboxSendAttempt.update({ where: { tenantId_id: { tenantId: actor.tenantId, id: attemptId } }, data: { reconciliation: 'SENT_ITEM_CONFIRMED', sent: false } });
     }
-    if (attempt.providerMessageId) {
-      await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId, kind: 'PROVIDER_REFERENCE_PRESENT', detail: { delivered: false } } });
-    }
-    return { state: attempt.state, sent: false as const };
+    return { state: kind === 'SENT_ITEM_CONFIRMED' ? 'SENT_ITEM_CONFIRMED' : loaded.attempt.state, sent: false as const };
   });
 }
 
@@ -349,7 +429,182 @@ async function ingestOne(tx: Prisma.TransactionClient, tenantId: string, connect
   return true;
 }
 
-async function sendFacts(tx: Prisma.TransactionClient, actor: { tenantId: string; userId: string }, threadId: string | null, connectionId: string): Promise<Omit<SendGateInput, 'approvalMatches' | 'approvalExpired' | 'duplicateAccepted' | 'liveSendEnabled' | 'tenantSendingEnabled' | 'humanAction' | 'captureMailbox' | 'sendScope' | 'senderAllowed'>> {
+const HOLDING_QUOTA = ['RESERVED', 'ACCEPTED', 'UNCERTAIN'];
+
+function utcWindows(now = new Date()): { hourStart: Date; dayStart: Date } {
+  return {
+    hourStart: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours())),
+    dayStart: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
+  };
+}
+
+async function quotaLimited(tx: Prisma.TransactionClient, tenantId: string, connectionId: string, userId: string, policy: { hourlyCap: number; dailyCap: number; tenantDailyCap: number; userHourlyCap: number } | null): Promise<boolean> {
+  if (!policy) return false;
+  const windows = utcWindows();
+  const state = { in: HOLDING_QUOTA };
+  const [hour, day, tenantDay, userHour] = await Promise.all([
+    tx.emailSendReservation.count({ where: { tenantId, connectionId, hourStart: windows.hourStart, state } }),
+    tx.emailSendReservation.count({ where: { tenantId, connectionId, dayStart: windows.dayStart, state } }),
+    tx.emailSendReservation.count({ where: { tenantId, dayStart: windows.dayStart, state } }),
+    tx.emailSendReservation.count({ where: { tenantId, userId, hourStart: windows.hourStart, state } }),
+  ]);
+  return hour >= policy.hourlyCap || day >= policy.dailyCap || tenantDay >= policy.tenantDailyCap || userHour >= policy.userHourlyCap;
+}
+
+async function claimDispatch(prisma: PrismaClient, actor: Actor, prepared: { draft: { connectionId: string }; version: { id: string; bodySha256: string } | null; approval: { id: string } | null; connection: { provider: string; revocationVersion: number } | null; recipients: string[]; contactKey: string }): Promise<{ created: boolean; state: string; reasons: string[] }> {
+  if (!prepared.version || !prepared.connection) return { created: false, state: 'FAILED_FINAL', reasons: ['NOT_FOUND'] };
+  try {
+    return await withTenant(prisma, actor.tenantId, async (tx) => {
+      await tx.$queryRaw`SELECT tenant_id FROM public.email_send_policies WHERE tenant_id = ${actor.tenantId}::uuid FOR UPDATE`;
+      const reserved = await tx.emailSendReservation.findUnique({ where: { tenantId_draftVersionId: { tenantId: actor.tenantId, draftVersionId: prepared.version!.id } } });
+      if (reserved) {
+        const attempt = await tx.mailboxSendAttempt.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: reserved.attemptId } } });
+        return { created: false, state: attempt?.state ?? 'DELIVERY_UNKNOWN', reasons: ['DUPLICATE_SEND'] };
+      }
+      const policy = await tx.emailSendPolicy.findUnique({ where: { tenantId: actor.tenantId } });
+      const connection = await tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: prepared.draft.connectionId } } });
+      if (!connection || connection.status === 'DISCONNECTED' || connection.revocationVersion !== prepared.connection!.revocationVersion) {
+        return { created: false, state: 'FAILED_FINAL', reasons: ['REVOKED_BEFORE_DISPATCH'] };
+      }
+      if (await quotaLimited(tx, actor.tenantId, prepared.draft.connectionId, actor.userId, policy)) {
+        return { created: false, state: 'FAILED_FINAL', reasons: ['RATE_LIMIT'] };
+      }
+      const windows = utcWindows();
+      const key = createHash('sha256').update(`${prepared.version!.id}:dispatch`).digest('hex');
+      const attempt = await tx.mailboxSendAttempt.create({
+        data: {
+          tenantId: actor.tenantId,
+          draftVersionId: prepared.version!.id,
+          approvalId: prepared.approval?.id,
+          connectionId: prepared.draft.connectionId,
+          state: 'IN_FLIGHT',
+          provider: connection.provider,
+          reconciliation: 'DISPATCH_STARTED',
+          revocationVersion: connection.revocationVersion,
+          policyRevision: policy?.policyRevision ?? 0,
+          payloadDigest: prepared.version!.bodySha256,
+          sent: false,
+          idempotencyKey: key,
+        },
+      });
+      await tx.emailSendReservation.create({
+        data: {
+          tenantId: actor.tenantId,
+          attemptId: attempt.id,
+          connectionId: prepared.draft.connectionId,
+          userId: actor.userId,
+          draftVersionId: prepared.version!.id,
+          state: 'RESERVED',
+          recipientCount: prepared.recipients.length,
+          contactKey: prepared.contactKey,
+          hourStart: windows.hourStart,
+          dayStart: windows.dayStart,
+        },
+      });
+      await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId: attempt.id, kind: 'IN_FLIGHT', detail: { sent: false, delivered: false } } });
+      return { created: true, state: 'IN_FLIGHT', reasons: ['DISPATCH_STARTED'] };
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return { created: false, state: 'DELIVERY_UNKNOWN', reasons: ['DUPLICATE_SEND'] };
+    }
+    throw error;
+  }
+}
+
+async function assertDispatchFence(prisma: PrismaClient, actor: Actor, prepared: { draft: { connectionId: string; threadId: string | null }; version: { id: string; bodySha256: string } | null; connection: { revocationVersion: number; provider: string } | null }): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!prepared.version || !prepared.connection) return { ok: false, reason: 'NOT_FOUND' };
+  return withTenant(prisma, actor.tenantId, async (tx) => {
+    const key = createHash('sha256').update(`${prepared.version!.id}:dispatch`).digest('hex');
+    const attempt = await tx.mailboxSendAttempt.findUnique({ where: { tenantId_idempotencyKey: { tenantId: actor.tenantId, idempotencyKey: key } } });
+    const connection = await tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: prepared.draft.connectionId } } });
+    const policy = await tx.emailSendPolicy.findUnique({ where: { tenantId: actor.tenantId } });
+    const approval = await tx.mailboxApproval.findFirst({ where: { tenantId: actor.tenantId, draftVersionId: prepared.version!.id, decision: 'APPROVED' } });
+    const active = await tx.$queryRaw<Array<{ ok: boolean }>>`SELECT public.tenant_is_active(${actor.tenantId}::uuid) AS ok`;
+    const allowed = await canAccess(tx, actor, prepared.draft.connectionId, 'SEND') && await hasPermission(tx, actor.tenantId, actor.userId, 'mailbox.send') && await hasPermission(tx, actor.tenantId, actor.userId, 'mailbox.send.execute');
+    const facts = await sendFacts(tx, actor, prepared.draft.threadId, prepared.draft.connectionId);
+    const scopes = Array.isArray(connection?.scopes) ? connection.scopes.map(String) : [];
+    if (!attempt || attempt.state !== 'IN_FLIGHT') return { ok: false, reason: 'DUPLICATE_SEND' };
+    if (!connection || connection.status === 'DISCONNECTED' || connection.revocationVersion !== attempt.revocationVersion) return { ok: false, reason: 'REVOKED_BEFORE_DISPATCH' };
+    if (!connection.sendingEnabled || connection.sendCapability !== 'SEND_AUTHORIZED') return { ok: false, reason: 'REVOKED_BEFORE_DISPATCH' };
+    if (!policy?.enabled || policy.killSwitch || policy.policyRevision !== attempt.policyRevision) return { ok: false, reason: 'REVOKED_BEFORE_DISPATCH' };
+    if (!(connection.provider === 'test' || sendScopeGranted(connection.provider, scopes))) return { ok: false, reason: 'REVOKED_BEFORE_DISPATCH' };
+    if (active[0]?.ok !== true) return { ok: false, reason: 'ORGANIZATION_INACTIVE' };
+    if (!allowed) return { ok: false, reason: 'SENDER_NOT_ALLOWED' };
+    if (!approval || approval.payloadSha256 !== prepared.version!.bodySha256 || approval.expiresAt.getTime() < Date.now()) return { ok: false, reason: 'APPROVAL_MISMATCH' };
+    if (facts.suppressed) return { ok: false, reason: 'SUPPRESSED' };
+    if (facts.humanTakeover) return { ok: false, reason: 'HUMAN_TAKEOVER' };
+    if (!facts.consentKnown) return { ok: false, reason: 'CONSENT_UNKNOWN' };
+    if (!facts.recipientVerified) return { ok: false, reason: 'RECIPIENT_UNVERIFIED' };
+    if (facts.quietHours !== 'ALLOW') return { ok: false, reason: facts.quietHours === 'BLOCK' ? 'QUIET_HOURS' : 'QUIET_HOURS_UNKNOWN' };
+    return { ok: true };
+  });
+}
+
+async function settleAttempt(prisma: PrismaClient, actor: Actor, prepared: { draft: { connectionId: string }; version: { id: string } | null }, state: string, reservation: 'ACCEPTED' | 'RELEASED' | 'UNCERTAIN', outcome: OutboundDelivery, reason: string): Promise<void> {
+  if (!prepared.version) return;
+  const key = createHash('sha256').update(`${prepared.version.id}:dispatch`).digest('hex');
+  await withTenant(prisma, actor.tenantId, async (tx) => {
+    const attempt = await tx.mailboxSendAttempt.findUnique({ where: { tenantId_idempotencyKey: { tenantId: actor.tenantId, idempotencyKey: key } } });
+    if (!attempt || attempt.state !== 'IN_FLIGHT') return;
+    await tx.mailboxSendAttempt.update({
+      where: { tenantId_id: { tenantId: actor.tenantId, id: attempt.id } },
+      data: {
+        state,
+        providerMessageId: outcome.providerMessageId,
+        providerRequestId: outcome.correlationId,
+        failureReason: state === 'FAILED_FINAL' ? reason : null,
+        reconciliation: state === 'PROVIDER_ACCEPTED' ? 'PROVIDER_ACCEPTED_NOT_DELIVERED' : state,
+        acceptanceState: outcome.acceptance,
+        correlationId: outcome.correlationId,
+        httpStatus: outcome.httpStatus,
+        acceptedAt: state === 'PROVIDER_ACCEPTED' ? new Date() : null,
+        sent: false,
+      },
+    });
+    await tx.emailSendReservation.updateMany({ where: { tenantId: actor.tenantId, attemptId: attempt.id }, data: { state: reservation } });
+    if (state === 'PROVIDER_ACCEPTED') {
+      const dayStart = utcWindows().dayStart;
+      await tx.emailSendQuota.upsert({
+        where: { tenantId_connectionId_periodStart: { tenantId: actor.tenantId, connectionId: prepared.draft.connectionId, periodStart: dayStart } },
+        create: { tenantId: actor.tenantId, connectionId: prepared.draft.connectionId, periodStart: dayStart, acceptedCount: 1 },
+        update: { acceptedCount: { increment: 1 } },
+      });
+    }
+    await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId: attempt.id, kind: state, detail: { sent: false, reason, delivered: false, reservation } } });
+  });
+}
+
+export async function sendQuotaSummary(prisma: PrismaClient, tenantId: string): Promise<{ hourlyCap: number; dailyCap: number; tenantDailyCap: number; userHourlyCap: number; maxRecipients: number; reserved: number; accepted: number; uncertain: number; released: number }> {
+  return withTenant(prisma, tenantId, async (tx) => {
+    const policy = await tx.emailSendPolicy.findUnique({ where: { tenantId } });
+    const dayStart = utcWindows().dayStart;
+    const count = (state: string) => tx.emailSendReservation.count({ where: { tenantId, dayStart, state } });
+    return {
+      hourlyCap: policy?.hourlyCap ?? 20,
+      dailyCap: policy?.dailyCap ?? 100,
+      tenantDailyCap: policy?.tenantDailyCap ?? 100,
+      userHourlyCap: policy?.userHourlyCap ?? 10,
+      maxRecipients: policy?.maxRecipients ?? 5,
+      reserved: await count('RESERVED'),
+      accepted: await count('ACCEPTED'),
+      uncertain: await count('UNCERTAIN'),
+      released: await count('RELEASED'),
+    };
+  });
+}
+
+export async function investigateDelivery(prisma: PrismaClient, actor: Actor, attemptId: string, note: string): Promise<{ state: string; sent: false }> {
+  return withTenant(prisma, actor.tenantId, async (tx) => {
+    const attempt = await tx.mailboxSendAttempt.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: attemptId } } });
+    if (!attempt) throw new Error('NOT_FOUND');
+    if (!(await canAccess(tx, actor, attempt.connectionId, 'READ'))) throw new Error('FORBIDDEN');
+    await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId, kind: 'HUMAN_INVESTIGATION', detail: { note: note.slice(0, 500), delivered: false, providerStateUnchanged: true } } });
+    return { state: attempt.state, sent: false as const };
+  });
+}
+
+async function sendFacts(tx: Prisma.TransactionClient, actor: { tenantId: string; userId: string }, threadId: string | null, connectionId: string): Promise<Omit<SendGateInput, 'approvalMatches' | 'approvalExpired' | 'duplicateAccepted' | 'liveSendEnabled' | 'tenantSendingEnabled' | 'mailboxSendingEnabled' | 'killSwitch' | 'providerReady' | 'humanAction' | 'captureMailbox' | 'sendScope' | 'senderAllowed' | 'recipientLimitExceeded'>> {
   const link = threadId ? await tx.mailboxThreadLink.findFirst({ where: { tenantId: actor.tenantId, threadId, subjectType: 'lead' } }) : null;
   const lead = link ? await tx.crmLead.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: link.subjectId } }, include: { contact: true } }) : null;
   const takeover = threadId ? await tx.crmTakeover.findFirst({ where: { tenantId: actor.tenantId, active: true, subjectType: 'lead', subjectId: link?.subjectId ?? threadId } }) : null;
@@ -386,13 +641,13 @@ async function sendFacts(tx: Prisma.TransactionClient, actor: { tenantId: string
   };
 }
 
-async function recordAttempt(prisma: PrismaClient, actor: Actor, prepared: { draft: { connectionId: string }; version: { id: string } | null; approval: { id: string } | null; connection: { provider: string } | null }, state: string, reason: string): Promise<{ state: string; sent: false }> {
-  if (!prepared.version || !prepared.connection) return { state: 'FAILED_FINAL', sent: false };
+async function recordAttempt(prisma: PrismaClient, actor: Actor, prepared: { draft: { connectionId: string }; version: { id: string } | null; approval: { id: string } | null; connection: { provider: string } | null }, state: string, reason: string, outcome?: OutboundDelivery): Promise<{ state: string; sent: false; created: boolean }> {
+  if (!prepared.version || !prepared.connection) return { state: 'FAILED_FINAL', sent: false, created: false };
   return withTenant(prisma, actor.tenantId, async (tx) => {
     const key = createHash('sha256').update(`${prepared.version!.id}:${state}`).digest('hex');
     const existing = await tx.mailboxSendAttempt.findUnique({ where: { tenantId_idempotencyKey: { tenantId: actor.tenantId, idempotencyKey: key } } });
-    if (existing) return { state: existing.state, sent: false as const };
-    const providerMessageId = state === 'CAPTURED' ? `capture-${randomUUID()}` : null;
+    if (existing) return { state: existing.state, sent: false as const, created: false };
+    const providerMessageId = state === 'CAPTURED' ? `capture-${randomUUID()}` : outcome?.providerMessageId ?? null;
     const created = await tx.mailboxSendAttempt.create({
       data: {
         tenantId: actor.tenantId,
@@ -401,16 +656,28 @@ async function recordAttempt(prisma: PrismaClient, actor: Actor, prepared: { dra
         connectionId: prepared.draft.connectionId,
         state,
         provider: prepared.connection!.provider,
-        providerRequestId: state === 'CAPTURED' ? `request-${randomUUID()}` : null,
+        providerRequestId: outcome?.correlationId ?? (state === 'CAPTURED' ? `request-${randomUUID()}` : null),
         providerMessageId,
         failureReason: state === 'FAILED_FINAL' ? reason : null,
-        reconciliation: state === 'CAPTURED' ? 'CAPTURED_NOT_SENT' : reason,
+        reconciliation: state === 'CAPTURED' ? 'CAPTURED_NOT_SENT' : state === 'PROVIDER_ACCEPTED' ? 'PROVIDER_ACCEPTED_NOT_DELIVERED' : reason,
+        acceptanceState: outcome?.acceptance ?? null,
+        correlationId: outcome?.correlationId ?? null,
+        httpStatus: outcome?.httpStatus ?? null,
         sent: false,
         idempotencyKey: key,
       },
     });
-    await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId: created.id, kind: state, detail: { sent: false, reason } } });
-    return { state, sent: false as const };
+    if (state === 'PROVIDER_ACCEPTED') {
+      const today = new Date();
+      const periodStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      await tx.emailSendQuota.upsert({
+        where: { tenantId_connectionId_periodStart: { tenantId: actor.tenantId, connectionId: prepared.draft.connectionId, periodStart } },
+        create: { tenantId: actor.tenantId, connectionId: prepared.draft.connectionId, periodStart, acceptedCount: 1 },
+        update: { acceptedCount: { increment: 1 } },
+      });
+    }
+    await tx.mailboxDeliveryEvent.create({ data: { tenantId: actor.tenantId, attemptId: created.id, kind: state, detail: { sent: false, reason, delivered: false } } });
+    return { state, sent: false as const, created: true };
   });
 }
 

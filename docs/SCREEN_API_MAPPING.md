@@ -131,11 +131,15 @@ Signed-out inbox stays the simulated demonstration. Signed-in `/workspace/inbox`
 | Link and assign | `threads/link`, `threads/assign` | `mailbox.draft` |
 | Drafts | `drafts/list`, `drafts/save`, `drafts/submit` | `mailbox.read` or `mailbox.draft` |
 | Decision | `email-approvals/decide` | `mailbox.review` |
-| Send review | `email-send/run` | `mailbox.send` |
+| Send review | `email-send/run` | `mailbox.send` plus `mailbox.send.execute` on the server |
+| Sending status | `email-sending/status` | `mailbox.read` |
+| Tenant send policy | `email-sending/policy` | `mailbox.send.manage` |
+| Mailbox sending switch | `email-sending/mailbox` | `mailbox.send.manage` |
+| Send-scope consent | `mailboxes/oauth/send-start` | `mailbox.send.request` |
 | Delivery | `delivery/list`, `delivery/reconcile` | `mailbox.read` |
 | Analysis run | `inbox-ai/run` | `mailbox.draft` |
 
-OAuth return is `GET /api/v1/mailbox/oauth/callback`. Capture webhooks are `POST /api/v1/mailbox/webhooks/capture`. The screen shows `SEND DISABLED`, `NOT CONFIGURED`, and `MOCK / CAPTURE MODE`. A capture result is not labeled sent. Live send is not available from this screen.
+OAuth return is `GET /api/v1/mailbox/oauth/callback`. Capture webhooks are `POST /api/v1/mailbox/webhooks/capture`. The Inbox screen shows `SEND DISABLED`, `NOT CONFIGURED`, `READ ONLY`, and `MOCK / CAPTURE MODE`. It does not show `SEND NOW` while `email-sending/status` reports `sendNow: false`. A capture result is not labeled delivered. Read-only OAuth and send-scope OAuth are separate requests. Live send stays off unless the deployment flag, the tenant policy, and the mailbox switch are all on, and a person still has to call `email-send/run`.
 
 ## 9. Qualification (`qualification`)
 

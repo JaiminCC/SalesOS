@@ -33,7 +33,7 @@ export async function exchangeOAuthCode(
   provider: 'google' | 'microsoft',
   input: { clientId: string; clientSecret: string; code: string; redirectUri: string; verifier: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<{ accessToken: string; refreshToken: string | null; expiresIn: number | null; email: string | null; mailboxId: string | null }> {
+): Promise<{ accessToken: string; refreshToken: string | null; expiresIn: number | null; email: string | null; mailboxId: string | null; scopes: string[] }> {
   const tokenUrl = provider === 'google'
     ? 'https://oauth2.googleapis.com/token'
     : 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
@@ -47,7 +47,7 @@ export async function exchangeOAuthCode(
   });
   const tokenResponse = await fetchImpl(tokenUrl, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form });
   if (!tokenResponse.ok) throw new Error(`OAuth token exchange failed with ${tokenResponse.status}`);
-  const token = await tokenResponse.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
+  const token = await tokenResponse.json() as { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string };
   if (!token.access_token) throw new Error('OAuth token exchange returned no access token');
   const profileUrl = provider === 'google'
     ? 'https://gmail.googleapis.com/gmail/v1/users/me/profile'
@@ -62,5 +62,6 @@ export async function exchangeOAuthCode(
     expiresIn: token.expires_in ?? null,
     email,
     mailboxId: profile.id ?? email,
+    scopes: (token.scope ?? '').split(/[\s,]+/).filter(Boolean),
   };
 }

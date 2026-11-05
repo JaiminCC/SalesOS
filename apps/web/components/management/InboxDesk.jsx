@@ -10,6 +10,7 @@ const SECTIONS = [
   ['drafts', 'Drafts', 'mailbox_draft'],
   ['approvals', 'Approvals', 'mailbox_draft'],
   ['delivery', 'Delivery', 'mailbox_draft'],
+  ['sending', 'Sending', 'mailbox_draft'],
 ];
 
 export default function InboxDesk({ mode, permissions = [], notify, onNavigate }) {
@@ -21,7 +22,7 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
   const [pageSize, setPageSize] = useState(20);
   const [query, setQuery] = useState('');
   const [record, setRecord] = useState(null);
-  const [form, setForm] = useState({ address: '', subject: '', body: '', recipients: '', connectionId: '', text: '' });
+  const [form, setForm] = useState({ address: '', subject: '', body: '', recipients: '', cc: '', bcc: '', connectionId: '', text: '' });
   const [providers, setProviders] = useState([]);
   const [mailboxes, setMailboxes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +34,10 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
   const canDraft = permissions.includes('mailbox.draft');
   const canSend = permissions.includes('mailbox.send');
   const canReview = permissions.includes('mailbox.review');
-  const [confirm, setConfirm] = useState(false);
+  const canInvestigate = permissions.includes('mailbox.send.review');
+  const [confirm, setConfirm] = useState('');
+  const [quota, setQuota] = useState(null);
+  const [note, setNote] = useState('');
 
   useEffect(() => {
     const saved = window.sessionStorage.getItem('salesos-inbox-section');
@@ -51,12 +55,14 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
     if (mode !== 'list') return undefined;
     let cancelled = false;
     setLoading(true);
-    const path = section === 'threads' ? 'threads/list' : section === 'drafts' || section === 'approvals' ? 'drafts/list' : section === 'delivery' ? 'delivery/list' : 'mailboxes/list';
+    const path = section === 'threads' ? 'threads/list' : section === 'drafts' || section === 'approvals' ? 'drafts/list' : section === 'delivery' || section === 'sending' ? 'delivery/list' : 'mailboxes/list';
     Promise.all([
       managementRequest('mailboxes/providers', {}),
       managementRequest(path, { q: query, page, pageSize, sortBy: 'createdAt', sortDirection: 'desc' }),
-    ]).then(([sources, result]) => {
+      managementRequest('email-sending/status', {}),
+    ]).then(([sources, result, sending]) => {
       if (cancelled) return;
+      setQuota(sending);
       setProviders(sources.providers || []);
       setRows(result.items || []);
       setTotal(result.total || 0);
@@ -85,7 +91,9 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
       ? await managementRequest('threads/get', { id: context.resourceId })
       : section === 'drafts' || section === 'approvals'
         ? await managementRequest('drafts/get', { id: context.resourceId })
-        : await managementRequest('mailboxes/get', { id: context.resourceId });
+        : section === 'sending' || section === 'delivery'
+          ? await managementRequest('delivery/get', { id: context.resourceId })
+          : await managementRequest('mailboxes/get', { id: context.resourceId });
       if (!cancelled) { setRecord(loaded); setError(''); setLoading(false); }
     }).catch((cause) => { if (!cancelled) setError(cause.message); });
     return () => { cancelled = true; };
@@ -99,6 +107,8 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
       subject: record.subject || '',
       body: record.body || '',
       recipients: Array.isArray(record.recipients) ? record.recipients.join(', ') : currentForm.recipients,
+      cc: Array.isArray(record.cc) ? record.cc.join(', ') : currentForm.cc,
+      bcc: Array.isArray(record.bcc) ? record.bcc.join(', ') : currentForm.bcc,
     }));
   }, [mode, record]);
 
@@ -130,6 +140,8 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
       {mode === 'list' && !loading && (
         <>
           <p>{providers.map((item) => `${item.label}: ${item.availability}`).join(' · ')} · LIVE SEND NOT CONFIGURED</p>
+          <p>Read-only mailbox. Approval does not send. Capture stays unsent.</p>
+          {section === 'sending' && <p>SEND DISABLED · READ ONLY · SEND SCOPE REQUIRED · Attachments NOT SUPPORTED · DELIVERY UNKNOWN is not retried. Hourly cap {quota?.hourlyCap ?? 20}. Daily cap {quota?.dailyCap ?? 100}. Recipient limit {quota?.maxRecipients ?? 5}. Reserved {quota?.reserved ?? 0}. Accepted {quota?.accepted ?? 0}. Uncertain {quota?.uncertain ?? 0}.</p>}
           <SearchInput id="inbox-search" label="Search" value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
           <PageSizeSelector value={pageSize} onChange={(value) => { setPageSize(value); setPage(1); }} />
           {!rows.length ? <EmptyState title="No mailbox records" subtitle="Add a capture mailbox to import messages you provide. External mailboxes are not configured." /> : (
@@ -156,11 +168,13 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
         </RecordFormLayout>
       )}
       {(mode === 'add' || mode === 'edit') && (section === 'drafts' || section === 'approvals') && canDraft && (
-        <RecordFormLayout title={mode === 'edit' ? 'Edit draft' : 'Add draft'} onSubmit={(event) => { event.preventDefault(); const connectionId = form.connectionId || record?.connectionId || mailboxes[0]?.id; const revoked = record?.status === 'APPROVED'; managementRequest('drafts/save', { id: mode === 'edit' ? record?.id : undefined, connectionId, subject: form.subject, body: form.body, recipients: form.recipients.split(',').map((item) => item.trim()).filter(Boolean) }).then(() => { notify(revoked ? 'Approval revoked. The draft was not sent.' : 'Draft saved. It was not sent.'); onNavigate('inbox', 'list'); }).catch((cause) => setError(cause.message)); }}>
+        <RecordFormLayout title={mode === 'edit' ? 'Edit draft' : 'Add draft'} onSubmit={(event) => { event.preventDefault(); const connectionId = form.connectionId || record?.connectionId || mailboxes[0]?.id; const revoked = record?.status === 'APPROVED'; const split = (value) => value.split(',').map((item) => item.trim()).filter(Boolean); managementRequest('drafts/save', { id: mode === 'edit' ? record?.id : undefined, connectionId, subject: form.subject, body: form.body, recipients: split(form.recipients), cc: split(form.cc), bcc: split(form.bcc) }).then(() => { notify(revoked ? 'Approval revoked. The draft was not sent.' : 'Draft saved. It was not sent.'); onNavigate('inbox', 'list'); }).catch((cause) => setError(cause.message)); }}>
           {mode === 'add' && <label htmlFor="draft-connection">Mailbox<select id="draft-connection" value={form.connectionId} onChange={(event) => setForm({ ...form, connectionId: event.target.value })} required><option value="">Choose a mailbox</option>{mailboxes.map((item) => <option key={item.id} value={item.id}>{item.address}</option>)}</select></label>}
           <label htmlFor="subject">Subject<input id="subject" value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} required /></label>
           <label htmlFor="body">Body<textarea id="body" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} required /></label>
-          <label htmlFor="recipients">Recipients<input id="recipients" value={form.recipients} onChange={(event) => setForm({ ...form, recipients: event.target.value })} /></label>
+          <label htmlFor="recipients">To<input id="recipients" value={form.recipients} onChange={(event) => setForm({ ...form, recipients: event.target.value })} /></label>
+          <label htmlFor="cc">Cc<input id="cc" value={form.cc} onChange={(event) => setForm({ ...form, cc: event.target.value })} /></label>
+          <label htmlFor="bcc">Bcc<input id="bcc" value={form.bcc} onChange={(event) => setForm({ ...form, bcc: event.target.value })} /></label>
           <FormActions><button className="btn" type="button" onClick={() => onNavigate('inbox', 'list')}>Cancel</button><button className="btn btn-primary" type="submit">Save draft</button></FormActions>
         </RecordFormLayout>
       )}
@@ -187,13 +201,22 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
           {record.messages?.map((item) => <article key={item.id}><p>{item.sender}</p><p>{item.text}</p></article>)}
           {record.analyses?.map((item) => <article key={item.summary}><p>AI summary</p><p>{item.summary}</p><p>{item.modelProvider ? `${item.modelProvider} ${item.modelName ?? ''}` : 'MOCK'}</p></article>)}
           {record.versions?.map((item) => <p key={item.version}>Version {item.version}</p>)}
-          {section === 'connections' && canConnect && <button className="btn" type="button" onClick={() => setConfirm(true)}>Disconnect</button>}
+          {section === 'connections' && canConnect && <button className="btn" type="button" onClick={() => setConfirm('disconnect')}>Disconnect</button>}
           {(section === 'drafts' || section === 'approvals') && canDraft && record.id && <button className="btn" type="button" onClick={() => managementRequest('drafts/submit', { id: record.id }).then(() => notify('Submitted for review. Nothing was sent.')).catch((cause) => setError(cause.message))}>Submit for review</button>}
           {section === 'approvals' && canReview && record.id && <button className="btn" type="button" onClick={() => managementRequest('email-approvals/decide', { id: record.id, decision: 'APPROVED' }).then(() => notify('Approved. Nothing was sent.')).catch((cause) => setError(cause.message))}>Approve</button>}
-          {section === 'drafts' && canSend && record.id && <button className="btn" type="button" onClick={() => managementRequest('email-send/run', { id: record.id }).then((result) => notify(`Delivery ${result.state}. Sent ${String(result.sent)}.`)).catch((cause) => setError(cause.message))}>Send review</button>}
+          {section === 'drafts' && canSend && record.id && <p>SEND DISABLED. No SEND NOW action while live sending is off. Approval does not dispatch.</p>}
+          {(section === 'sending' || section === 'delivery') && record.state && <p>State {record.state}. Reservation {record.reservation || 'none'}. Sent {String(record.sent)}. Reconciliation {record.reconciliation || 'none'}.</p>}
+          {(section === 'sending' || section === 'delivery') && record.events?.map((item) => <p key={`${item.kind}-${item.createdAt}`}>{item.kind}</p>)}
+          {(section === 'sending' || section === 'delivery') && canInvestigate && record.id && (
+            <form onSubmit={(event) => { event.preventDefault(); setConfirm('investigate'); }}>
+              <label htmlFor="investigation">Investigation note<textarea id="investigation" value={note} onChange={(event) => setNote(event.target.value)} required /></label>
+              <button className="btn" type="submit">Record investigation</button>
+            </form>
+          )}
         </RecordDetailsLayout>
       )}
-      {confirm && record && <ConfirmDialog title="Disconnect mailbox" body="Stored tokens are cleared. This does not send email." confirmLabel="Disconnect" onCancel={() => setConfirm(false)} onConfirm={() => managementRequest('mailboxes/disconnect', { id: record.id }).then(() => { setConfirm(false); notify('Mailbox disconnected.'); onNavigate('inbox', 'list'); })} />}
+      {confirm === 'disconnect' && record && <ConfirmDialog title="Disconnect mailbox" body="Stored tokens are cleared. This does not send email." confirmLabel="Disconnect" onCancel={() => setConfirm('')} onConfirm={() => managementRequest('mailboxes/disconnect', { id: record.id }).then(() => { setConfirm(''); notify('Mailbox disconnected.'); onNavigate('inbox', 'list'); })} />}
+      {confirm === 'investigate' && record && <ConfirmDialog title="Record investigation" body="This note does not mark the message delivered and does not change the provider result." confirmLabel="Record note" onCancel={() => setConfirm('')} onConfirm={() => managementRequest('delivery/investigate', { id: record.id, note }).then(() => managementRequest('delivery/get', { id: record.id })).then((loaded) => { setRecord(loaded); setConfirm(''); notify('Investigation recorded. Provider state was not changed.'); }).catch((cause) => setError(cause.message))} />}
     </ManagementPageLayout>
   );
 }

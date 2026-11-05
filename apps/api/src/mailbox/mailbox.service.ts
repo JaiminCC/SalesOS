@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { Prisma, canAccess, decodeEncryptionKey, decryptField, encryptToken, hashState, queueMailboxImport, reconcileSend, reviewDraft, revokeMailboxConnection, saveDraft, sendDraft, submitDraft, syncConnection, withTenant } from '@salesos/database';
-import { allowedRedirect, liveEmailSendEnabled, mailboxProviders, oauthAuthorizeUrl, pkcePair } from '@salesos/shared';
+import { Prisma, canAccess, decodeEncryptionKey, decryptField, encryptToken, hashState, investigateDelivery, queueMailboxImport, reconcileSend, reviewDraft, revokeMailboxConnection, saveDraft, sendDraft, sendQuotaSummary, submitDraft, syncConnection, withTenant } from '@salesos/database';
+import { sendWithGmail, sendWithGraph } from '@salesos/integrations';
+import { allowedRedirect, liveEmailSendEnabled, mailboxProviders, oauthAuthorizeUrl, pkcePair, sendScopeGranted } from '@salesos/shared';
 import { webhookAuthentic, exchangeOAuthCode } from '@salesos/integrations';
 import { captureWebhookStatus } from '@salesos/shared';
 import { ApiException } from '../common/api.exception';
@@ -55,20 +56,33 @@ export class MailboxConnectionService {
     });
   }
 
-  async startOauth(actor: SessionContext, body: OauthStartDto) {
+  async startOauth(actor: SessionContext, body: OauthStartDto, send = false) {
     const origins = this.config.env.WEB_ORIGIN.split(',').map((item) => item.trim());
     if (!allowedRedirect(body.redirectUri, origins)) throw new ApiException(400, 'VALIDATION_ERROR', 'Redirect target is not allowed');
     const clientId = body.provider === 'google' ? this.config.env.GOOGLE_OAUTH_CLIENT_ID : this.config.env.MICROSOFT_OAUTH_CLIENT_ID;
     const pair = pkcePair();
     const state = randomBytes(24).toString('base64url');
-    const url = oauthAuthorizeUrl(body.provider, { clientId, redirectUri: body.redirectUri, state, challenge: pair.challenge });
-    if (!url) return { status: 'NOT_CONFIGURED', authorizeUrl: null, live: false };
+    const url = oauthAuthorizeUrl(body.provider, { clientId, redirectUri: body.redirectUri, state, challenge: pair.challenge, send });
+    if (!url) return { status: 'NOT_CONFIGURED' as const, authorizeUrl: null, live: false as const, send };
     const tenantId = this.tenant(actor);
     const key = decodeEncryptionKey(this.config.env.DATA_ENCRYPTION_KEY);
     await withTenant(this.database.prisma, tenantId, (tx) => tx.mailboxOauthState.create({
       data: { tenantId, stateHash: hashState(state), provider: body.provider, verifierCiphertext: new Uint8Array(encryptToken(pair.verifier, key)), redirectUri: body.redirectUri, createdBy: actor.userId, expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
     }));
-    return { status: 'CONFIGURED_UNVERIFIED', authorizeUrl: url, live: false };
+    return { status: 'CONFIGURED_UNVERIFIED' as const, authorizeUrl: url, live: false as const, send };
+  }
+
+  async startSendOauth(actor: SessionContext, body: OauthStartDto & { connectionId?: string }) {
+    const started = await this.startOauth(actor, body, true);
+    const tenantId = this.tenant(actor);
+    if (body.connectionId && started.authorizeUrl) {
+      await withTenant(this.database.prisma, tenantId, async (tx) => {
+        const row = await tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId, id: body.connectionId! } } });
+        if (!row || row.status === 'DISCONNECTED') return;
+        await tx.mailboxConnection.update({ where: { tenantId_id: { tenantId, id: row.id } }, data: { sendCapability: 'SEND_REQUESTED', sendingEnabled: false } });
+      });
+    }
+    return { ...started, capability: started.authorizeUrl ? 'SEND_REQUESTED' : 'READ_ONLY', sendingEnabled: false };
   }
 
   async completeOauth(state: string, code: string | undefined): Promise<{ location: string }> {
@@ -107,13 +121,14 @@ export class MailboxConnectionService {
             providerMailboxId: exchanged.mailboxId || exchanged.email!,
             address: exchanged.email!,
             connectedBy: prepared.createdBy,
-            scopes: ['READ'],
+            scopes: exchanged.scopes.length ? exchanged.scopes : ['READ'],
             accessTokenCiphertext: new Uint8Array(encryptToken(exchanged.accessToken, key)),
             refreshTokenCiphertext: exchanged.refreshToken ? new Uint8Array(encryptToken(exchanged.refreshToken, key)) : null,
             tokenExpiresAt: exchanged.expiresIn ? new Date(Date.now() + exchanged.expiresIn * 1000) : null,
             status: 'CONFIGURED_UNVERIFIED',
             live: false,
             sendingEnabled: false,
+            sendCapability: sendScopeGranted(prepared.provider, exchanged.scopes) ? 'SEND_AUTHORIZED' : 'READ_ONLY',
           },
         });
         await tx.mailboxAccess.create({ data: { tenantId: row.tenant_id, connectionId: created.id, userId: prepared.createdBy, accessRole: 'READ' } });
@@ -139,8 +154,9 @@ export class MailboxConnectionService {
     return row;
   }
 
-  private publicConnection(row: { id: string; provider: string; address: string; status: string; live: boolean; lastSyncAt: Date | null; lastError: string | null; sendingEnabled: boolean }) {
-    return { id: row.id, provider: row.provider, address: row.address, status: row.status, live: row.live, lastSyncAt: row.lastSyncAt, lastError: row.lastError, sendingEnabled: row.sendingEnabled, label: row.status === 'CAPTURE' ? 'MOCK / CAPTURE MODE' : row.status === 'DISCONNECTED' ? 'DISCONNECTED' : row.status === 'SYNCED' ? 'SYNCED' : row.status === 'CONFIGURED_UNVERIFIED' ? 'CONFIGURED UNVERIFIED' : row.live ? 'LIVE CONNECTED' : 'NOT CONFIGURED' };
+  private publicConnection(row: { id: string; provider: string; address: string; status: string; live: boolean; lastSyncAt: Date | null; lastError: string | null; sendingEnabled: boolean; sendCapability?: string }) {
+    const capability = row.sendCapability ?? 'READ_ONLY';
+    return { id: row.id, provider: row.provider, address: row.address, status: row.status, live: row.live, lastSyncAt: row.lastSyncAt, lastError: row.lastError, sendingEnabled: row.sendingEnabled, sendCapability: capability, label: row.status === 'CAPTURE' ? 'MOCK / CAPTURE MODE' : row.status === 'DISCONNECTED' ? 'DISCONNECTED' : row.status === 'SYNCED' ? 'SYNCED' : row.status === 'CONFIGURED_UNVERIFIED' ? 'CONFIGURED UNVERIFIED' : row.live ? 'LIVE CONNECTED' : 'NOT CONFIGURED' };
   }
 
   private tenant(actor: SessionContext): string {
@@ -299,8 +315,65 @@ export class MailboxSendService {
   }
 
   async send(actor: SessionContext, id: string) {
-    const result = await this.wrap(() => sendDraft(this.database.prisma, this.actor(actor), id, liveEmailSendEnabled(this.config.env)));
-    return { ...result, label: result.state === 'CAPTURED' ? 'MOCK / CAPTURE MODE' : 'SEND DISABLED' };
+    const live = liveEmailSendEnabled(this.config.env);
+    const result = await this.wrap(() => sendDraft(this.database.prisma, this.actor(actor), id, live, live ? async (input) => {
+      const message = { from: input.from, to: input.to, cc: input.cc, bcc: input.bcc, subject: input.subject, text: input.body, threadId: input.threadRef || undefined };
+      const sent = input.provider === 'microsoft' ? await sendWithGraph(input.token, message) : await sendWithGmail(input.token, message);
+      return sent;
+    } : undefined));
+    return { ...result, label: result.state === 'CAPTURED' ? 'MOCK / CAPTURE MODE' : result.state === 'PROVIDER_ACCEPTED' ? 'PROVIDER ACCEPTED' : result.state === 'DELIVERY_UNKNOWN' ? 'DELIVERY UNKNOWN' : 'SEND DISABLED' };
+  }
+
+  async status(actor: SessionContext) {
+    const live = liveEmailSendEnabled(this.config.env);
+    const tenantId = actor.tenantId;
+    const policy = tenantId ? await withTenant(this.database.prisma, tenantId, (tx) => tx.emailSendPolicy.findUnique({ where: { tenantId } })) : null;
+    const quota = tenantId ? await sendQuotaSummary(this.database.prisma, tenantId) : { hourlyCap: 20, dailyCap: 100, tenantDailyCap: 100, userHourlyCap: 10, maxRecipients: 5, reserved: 0, accepted: 0, uncertain: 0, released: 0 };
+    return { deployment: live ? 'ENABLED' : 'SEND DISABLED', tenant: policy?.enabled === true ? 'ON' : 'OFF', killSwitch: policy?.killSwitch === true ? 'ON' : 'OFF', mailbox: 'READ ONLY', live: live ? 'CONFIGURED' : 'NOT CONFIGURED', attachments: 'NOT SUPPORTED', sendNow: false, ...quota };
+  }
+
+  async setPolicy(actor: SessionContext, body: { enabled: boolean; killSwitch: boolean }) {
+    const tenantId = this.actor(actor).tenantId;
+    await withTenant(this.database.prisma, tenantId, (tx) => tx.emailSendPolicy.upsert({
+      where: { tenantId },
+      create: { tenantId, enabled: body.enabled, killSwitch: body.killSwitch },
+      update: { enabled: body.enabled, killSwitch: body.killSwitch, policyRevision: { increment: 1 } },
+    }));
+    return this.status(actor);
+  }
+
+  async setMailboxSending(actor: SessionContext, id: string, sendingEnabled: boolean) {
+    const tenantId = this.actor(actor).tenantId;
+    return withTenant(this.database.prisma, tenantId, async (tx) => {
+      const row = await tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId, id } } });
+      if (!row || !(await canAccess(tx, { tenantId, userId: actor.userId }, id, 'SEND'))) throw new Error('NOT_FOUND');
+      const scopes = Array.isArray(row.scopes) ? row.scopes.map(String) : [];
+      if (sendingEnabled && (row.sendCapability !== 'SEND_AUTHORIZED' || !sendScopeGranted(row.provider, scopes))) throw new Error('SEND_SCOPE_REQUIRED');
+      const updated = await tx.mailboxConnection.update({ where: { tenantId_id: { tenantId, id } }, data: { sendingEnabled } });
+      return { id: updated.id, sendingEnabled: updated.sendingEnabled, sendCapability: updated.sendCapability, live: false };
+    }).catch((error: Error) => {
+      if (error.message === 'SEND_SCOPE_REQUIRED') throw new ApiException(409, 'SEND_SCOPE_REQUIRED', 'Mailbox send scope is not granted');
+      if (error.message === 'NOT_FOUND') throw new ApiException(404, 'NOT_FOUND', 'Mailbox was not found');
+      throw error;
+    });
+  }
+
+  async delivery(actor: SessionContext, id: string) {
+    const tenantId = this.actor(actor).tenantId;
+    return withTenant(this.database.prisma, tenantId, async (tx) => {
+      const attempt = await tx.mailboxSendAttempt.findUnique({ where: { tenantId_id: { tenantId, id } } });
+      if (!attempt || !(await canAccess(tx, { tenantId, userId: actor.userId }, attempt.connectionId, 'READ'))) throw new Error('NOT_FOUND');
+      const events = await tx.mailboxDeliveryEvent.findMany({ where: { tenantId, attemptId: id }, orderBy: { createdAt: 'asc' }, take: 50 });
+      const reservation = await tx.emailSendReservation.findFirst({ where: { tenantId, attemptId: id } });
+      return { id: attempt.id, state: attempt.state, sent: false, provider: attempt.provider, providerMessageId: attempt.providerMessageId, reconciliation: attempt.reconciliation, acceptanceState: attempt.acceptanceState, reservation: reservation?.state ?? null, events: events.map((item) => ({ kind: item.kind, createdAt: item.createdAt })) };
+    }).catch((error: Error) => {
+      if (error.message === 'NOT_FOUND') throw new ApiException(404, 'NOT_FOUND', 'Delivery attempt was not found');
+      throw error;
+    });
+  }
+
+  investigate(actor: SessionContext, id: string, note: string) {
+    return this.wrap(() => investigateDelivery(this.database.prisma, this.actor(actor), id, note));
   }
 
   reconcile(actor: SessionContext, id: string) {
@@ -333,6 +406,8 @@ export class MailboxSendService {
         subject: draft.subject,
         body: draft.body,
         recipients: draft.recipients,
+        cc: versions[0]?.cc ?? [],
+        bcc: versions[0]?.bcc ?? [],
         status: draft.status,
         aiGenerated: draft.aiGenerated,
         versions: versions.map((item) => ({ version: item.version, subject: item.subject, bodySha256: item.bodySha256, runId: item.runId, createdAt: item.createdAt })),
@@ -359,10 +434,25 @@ export class MailboxSendService {
   async deliveries(actor: SessionContext, query: MailboxListDto) {
     const tenantId = actor.tenantId;
     if (!tenantId) throw new ApiException(409, 'ORGANIZATION_REQUIRED', 'Choose an organization');
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
     return withTenant(this.database.prisma, tenantId, async (tx) => {
       const access = await tx.mailboxAccess.findMany({ where: { tenantId, userId: actor.userId } });
-      const items = await tx.mailboxSendAttempt.findMany({ where: { tenantId, connectionId: { in: access.map((item) => item.connectionId) } }, orderBy: { createdAt: 'desc' }, take: query.pageSize ?? 20 });
-      return { items: items.map((item) => ({ id: item.id, state: item.state, sent: item.sent, provider: item.provider, providerMessageId: item.providerMessageId, reconciliation: item.reconciliation })), total: items.length };
+      const where = {
+        tenantId,
+        connectionId: { in: access.map((item) => item.connectionId) },
+        ...(query.q ? { OR: [
+          { state: { contains: query.q, mode: 'insensitive' as const } },
+          { reconciliation: { contains: query.q, mode: 'insensitive' as const } },
+          { provider: { contains: query.q, mode: 'insensitive' as const } },
+          { acceptanceState: { contains: query.q, mode: 'insensitive' as const } },
+        ] } : {}),
+      };
+      const [items, total] = await Promise.all([
+        tx.mailboxSendAttempt.findMany({ where, orderBy: { createdAt: query.sortDirection === 'asc' ? 'asc' : 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
+        tx.mailboxSendAttempt.count({ where }),
+      ]);
+      return { items: items.map((item) => ({ id: item.id, state: item.state, sent: false, provider: item.provider, providerMessageId: item.providerMessageId, reconciliation: item.reconciliation, acceptanceState: item.acceptanceState })), total, page, pageSize };
     });
   }
 

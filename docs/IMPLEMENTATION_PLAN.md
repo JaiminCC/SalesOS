@@ -891,3 +891,9 @@ A phase merges only when:
 | ST-016 | T4.1, T4.4 |
 
 Acceptance tests AT-01 through AT-26 are named on the tasks that implement them. AT-16 and the pilot signature sit in T9.7.
+
+## Sprint 7 status
+
+Sprint 7 adds controlled outbound email on top of the Sprint 6 mailbox. The implementation plan for the requirement map is `docs/SPRINT_7_IMPLEMENTATION_PLAN.md`. Completion, security review, and the live-send decision are in `docs/SPRINT_7_COMPLETION.md`, `docs/SPRINT_7_SECURITY_REVIEW.md`, and `docs/LIVE_EMAIL_SEND_ACCEPTANCE.md`.
+
+Live mailbox sync remains not tested. Live sending remains not authorized. Sprint 8 has not started.

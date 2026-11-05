@@ -1144,6 +1144,7 @@ model MailboxConnection {
   lastSyncAt             DateTime? @map("last_sync_at") @db.Timestamptz(6)
   lastError              String?   @map("last_error")
   sendingEnabled         Boolean   @default(false) @map("sending_enabled")
+  sendCapability         String    @default("READ_ONLY") @map("send_capability")
   revocationVersion      Int       @default(0) @map("revocation_version")
   live                   Boolean   @default(false)
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1313,6 +1314,8 @@ model MailboxDraftVersion {
   runId            String?  @map("run_id") @db.Uuid
   productVersionId String?  @map("product_version_id") @db.Uuid
   citations        Json     @default("[]")
+  cc               Json     @default("[]")
+  bcc              Json     @default("[]")
   createdBy        String   @map("created_by") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -1347,6 +1350,13 @@ model MailboxSendAttempt {
   providerMessageId String?  @map("provider_message_id")
   failureReason     String?  @map("failure_reason")
   reconciliation    String?
+  acceptanceState   String?  @map("acceptance_state")
+  correlationId     String?  @map("correlation_id")
+  httpStatus        Int?     @map("http_status")
+  revocationVersion Int?     @map("revocation_version")
+  policyRevision    Int?     @map("policy_revision")
+  payloadDigest     String?  @map("payload_digest")
+  acceptedAt        DateTime? @map("accepted_at") @db.Timestamptz(6)
   sent              Boolean  @default(false)
   idempotencyKey    String   @map("idempotency_key")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1355,6 +1365,51 @@ model MailboxSendAttempt {
   @@id([tenantId, id])
   @@unique([tenantId, idempotencyKey])
   @@map("mailbox_send_attempts")
+}
+
+model EmailSendPolicy {
+  tenantId     String   @id @map("tenant_id") @db.Uuid
+  enabled      Boolean  @default(false)
+  killSwitch   Boolean  @default(false) @map("kill_switch")
+  hourlyCap    Int      @default(20) @map("hourly_cap")
+  dailyCap     Int      @default(100) @map("daily_cap")
+  maxRecipients Int     @default(5) @map("max_recipients")
+  userHourlyCap Int     @default(10) @map("user_hourly_cap")
+  tenantDailyCap Int    @default(100) @map("tenant_daily_cap")
+  policyRevision Int    @default(1) @map("policy_revision")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("email_send_policies")
+}
+
+model EmailSendReservation {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptId      String   @map("attempt_id") @db.Uuid
+  connectionId   String   @map("connection_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  draftVersionId String   @map("draft_version_id") @db.Uuid
+  state          String
+  recipientCount Int      @map("recipient_count")
+  contactKey     String   @default("") @map("contact_key")
+  hourStart      DateTime @map("hour_start") @db.Timestamptz(6)
+  dayStart       DateTime @map("day_start") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, draftVersionId])
+  @@unique([tenantId, attemptId])
+  @@map("email_send_reservations")
+}
+
+model EmailSendQuota {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  connectionId  String   @map("connection_id") @db.Uuid
+  periodStart   DateTime @map("period_start") @db.Date
+  acceptedCount Int      @default(0) @map("accepted_count")
+
+  @@id([tenantId, connectionId, periodStart])
+  @@map("email_send_quotas")
 }
 
 model MailboxDeliveryEvent {

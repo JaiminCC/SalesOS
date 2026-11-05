@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentAllowed, draftDigest, evaluateSendGate, mailboxProviders, oauthAuthorizeUrl, resolveThreadKey, sanitizeEmailHtml } from './mailbox';
+import { attachmentAllowed, draftDigest, evaluateSendGate, mailboxProviders, normalizeOutboundRecipients, oauthAuthorizeUrl, resolveThreadKey, sanitizeEmailHtml } from './mailbox';
 
 const openGate = {
   organizationActive: true,
@@ -23,8 +23,12 @@ const openGate = {
   attachmentBlocked: false,
   duplicateAccepted: false,
   rateLimited: false,
+  recipientLimitExceeded: false,
   liveSendEnabled: false,
   tenantSendingEnabled: false,
+  mailboxSendingEnabled: false,
+  killSwitch: false,
+  providerReady: false,
   humanAction: true,
   captureMailbox: true,
 };
@@ -36,6 +40,12 @@ describe('mailbox policy', () => {
     expect(providers.find((item) => item.id === 'imap')?.capabilities).not.toContain('SEND');
     expect(providers.every((item) => item.live === false && item.sendGranted === false)).toBe(true);
     expect(oauthAuthorizeUrl('google', { redirectUri: 'https://app.example/workspace/inbox', state: 'opaque', challenge: 'abc' })).toBeNull();
+    const sendUrl = oauthAuthorizeUrl('google', { clientId: 'client', redirectUri: 'https://app.example/workspace/inbox', state: 'opaque', challenge: 'abc', send: true });
+    expect(sendUrl).toContain('gmail.send');
+    expect(sendUrl).not.toContain('gmail.readonly');
+    const readUrl = oauthAuthorizeUrl('google', { clientId: 'client', redirectUri: 'https://app.example/workspace/inbox', state: 'opaque', challenge: 'abc' });
+    expect(readUrl).toContain('gmail.readonly');
+    expect(readUrl).not.toContain('gmail.send');
   });
 
   it('strips active html and does not thread on subject', () => {
@@ -57,8 +67,26 @@ describe('mailbox policy', () => {
     expect(blocked.reasons).toContain('SUPPRESSED');
     expect(blocked.reasons).toContain('CONSENT_UNKNOWN');
     expect(blocked.sent).toBe(false);
+    const ready = evaluateSendGate({
+      ...openGate,
+      captureMailbox: false,
+      liveSendEnabled: true,
+      tenantSendingEnabled: true,
+      mailboxSendingEnabled: true,
+      sendScope: true,
+      providerReady: true,
+    });
+    expect(ready).toEqual({ decision: 'ALLOW', reasons: ['PROVIDER_READY'], sent: false });
+    const closed = evaluateSendGate({ ...openGate, captureMailbox: false, liveSendEnabled: false, tenantSendingEnabled: true, mailboxSendingEnabled: true, sendScope: true, providerReady: true });
+    expect(closed.reasons).toContain('LIVE_SEND_NOT_CONFIGURED');
+    expect(evaluateSendGate({ ...openGate, captureMailbox: false, liveSendEnabled: true, tenantSendingEnabled: true, mailboxSendingEnabled: true, sendScope: true, providerReady: true, killSwitch: true }).reasons).toContain('KILL_SWITCH');
     expect(attachmentAllowed('image/svg+xml', 10, 'logo.svg')).toBe(false);
     expect(draftDigest({ sender: 'A@Example', recipients: ['b@example'], subject: 'Hi', body: 'Body', attachments: [] })).toBe(draftDigest({ sender: 'a@example', recipients: ['b@example'], subject: 'Hi', body: 'Body', attachments: [] }));
+    expect(draftDigest({ sender: 'a@example', recipients: ['b@example'], subject: 'Hi', body: 'Body', attachments: [], bcc: ['hidden@example.com'] })).not.toBe(draftDigest({ sender: 'a@example', recipients: ['b@example'], subject: 'Hi', body: 'Body', attachments: [] }));
+    const counted = normalizeOutboundRecipients([['A@Example.com', 'a@example.com'], ['B@Example.com'], ['a@example.com', 'bad']]);
+    expect(counted.recipients).toEqual(['a@example.com', 'b@example.com']);
+    expect(counted.invalid).toBe(true);
+    expect(normalizeOutboundRecipients([['one@example.com', 'two@example.com']]).recipients).toHaveLength(2);
   });
 
   it('keeps capture webhooks off and treats email text as untrusted', async () => {

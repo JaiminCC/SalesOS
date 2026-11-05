@@ -9,9 +9,12 @@ import {
   DraftBodyDto,
   DraftDecisionDto,
   IdDto,
+  InvestigationDto,
   ImportMessagesDto,
   MailboxListDto,
+  MailboxSendingDto,
   OauthStartDto,
+  SendPolicyDto,
   ThreadAssignDto,
   ThreadLinkDto,
   ThreadUnlinkDto,
@@ -46,6 +49,9 @@ export class MailboxController {
 
   @Post('mailboxes/oauth/start') @HttpCode(200) @RequirePermissions('mailbox.connect')
   oauth(@Body() body: OauthStartDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.startOauth(request.auth!, body), request.requestId); }
+
+  @Post('mailboxes/oauth/send-start') @HttpCode(200) @RequirePermissions('mailbox.send.request')
+  sendOauth(@Body() body: OauthStartDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.startSendOauth(request.auth!, body), request.requestId); }
 
   @Post('mailboxes/disconnect') @HttpCode(200) @RequirePermissions('mailbox.connect')
   disconnect(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.disconnect(request.auth!, body.id, request.requestId), request.requestId); }
@@ -86,11 +92,26 @@ export class MailboxController {
   @Post('email-approvals/decide') @HttpCode(200) @RequirePermissions('mailbox.review')
   decide(@Body() body: DraftDecisionDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.decide(request.auth!, body), request.requestId); }
 
+  @Post('email-sending/status') @HttpCode(200) @RequirePermissions('mailbox.read')
+  sendingStatus(@Req() request: AuthenticatedRequest) { return this.ok(this.sendService.status(request.auth!), request.requestId); }
+
+  @Post('email-sending/policy') @HttpCode(200) @RequirePermissions('mailbox.send.manage')
+  sendingPolicy(@Body() body: SendPolicyDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.setPolicy(request.auth!, body), request.requestId); }
+
+  @Post('email-sending/mailbox') @HttpCode(200) @RequirePermissions('mailbox.send.manage')
+  mailboxSending(@Body() body: MailboxSendingDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.setMailboxSending(request.auth!, body.id, body.sendingEnabled), request.requestId); }
+
   @Post('email-send/run') @HttpCode(200) @RequirePermissions('mailbox.send')
   send(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.send(request.auth!, body.id), request.requestId); }
 
   @Post('delivery/list') @HttpCode(200) @RequirePermissions('mailbox.read')
   deliveries(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.deliveries(request.auth!, body), request.requestId); }
+
+  @Post('delivery/get') @HttpCode(200) @RequirePermissions('mailbox.read')
+  delivery(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.delivery(request.auth!, body.id), request.requestId); }
+
+  @Post('delivery/investigate') @HttpCode(200) @RequirePermissions('mailbox.send.review')
+  investigate(@Body() body: InvestigationDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.investigate(request.auth!, body.id, body.note), request.requestId); }
 
   @Post('delivery/reconcile') @HttpCode(200) @RequirePermissions('mailbox.read')
   reconcile(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.reconcile(request.auth!, body.id), request.requestId); }

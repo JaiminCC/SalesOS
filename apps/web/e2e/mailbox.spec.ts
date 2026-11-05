@@ -25,6 +25,7 @@ test('signed-in inbox uses capture mail and does not claim a live send', async (
   await expect(page.getByText('SEND DISABLED')).toBeVisible();
   await expect(page.getByText('Google Workspace: NOT CONFIGURED')).toBeVisible();
   await expect(page.getByText('LIVE SEND NOT CONFIGURED')).toBeVisible();
+  await expect(page.getByText('Read-only mailbox. Approval does not send. Capture stays unsent.')).toBeVisible();
   expect(page.url()).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 
   await page.getByRole('button', { name: 'Add mailbox' }).click();
@@ -37,6 +38,11 @@ test('signed-in inbox uses capture mail and does not claim a live send', async (
   await page.getByRole('button', { name: 'Drafts', exact: true }).click();
   await page.getByRole('button', { name: 'Approvals', exact: true }).click();
   await page.getByRole('button', { name: 'Delivery', exact: true }).click();
+  await page.getByRole('button', { name: 'Sending', exact: true }).click();
+  await expect(page.getByText('SEND DISABLED · READ ONLY · SEND SCOPE REQUIRED')).toBeVisible();
+  await expect(page.getByText(/Hourly cap 20/)).toBeVisible();
+  await expect(page.getByText(/Recipient limit 5/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'SEND NOW' })).toHaveCount(0);
   expect(page.url()).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 });
 
@@ -140,6 +146,7 @@ test('inbox links, ownership, drafts, and a second tab stay inside the signed-in
   await page.getByRole('button', { name: 'Back' }).click();
   await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByText('Status APPROVED')).toBeVisible();
+  await expect(page.getByText('No SEND NOW action while live sending is off.')).toBeVisible();
   await page.getByRole('button', { name: 'Back' }).click();
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('Body').fill('Offline barcode capture is supported. Edited.');

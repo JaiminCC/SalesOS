@@ -21,7 +21,7 @@ export { OWNER_ROLE_NAMES, PERMISSIONS, SYSTEM_ROLE_PERMISSIONS, SYSTEM_ROLES, i
 export { INBOX_ANALYZE_PLAN, LEAD_RESEARCH_PLAN, TOOL_REGISTRY, buildInboxPlan, buildLeadResearchPlan, buildSupervisorPlan, toolDefinition, validatePlan } from './tools';
 export type { PlanStep, ToolDefinition, ToolRisk } from './tools';
 export { redactText, redactValue } from './redact';
-export { allowedRedirect, attachmentAllowed, captureWebhookStatus, classifyIntent, draftDigest, evaluateSendGate, inboxAnalysisPrompt, liveEmailSendEnabled, mailboxProviders, oauthAuthorizeUrl, pkcePair, plainText, resolveThreadKey, sanitizeEmailHtml } from './mailbox';
+export { allowedRedirect, attachmentAllowed, captureWebhookStatus, classifyIntent, draftDigest, evaluateSendGate, headerSafe, inboxAnalysisPrompt, liveEmailSendEnabled, mailboxProviders, normalizeOutboundRecipients, oauthAuthorizeUrl, pkcePair, plainText, resolveThreadKey, sanitizeEmailHtml, sendScopeGranted } from './mailbox';
 export type { MailboxCapability, MailboxProviderDescriptor, MailboxProviderStatus, SendGateInput, ThreadHint } from './mailbox';
 export type { Permission, SystemRole } from './permissions';
 export {

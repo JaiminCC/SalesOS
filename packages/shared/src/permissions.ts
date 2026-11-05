@@ -41,6 +41,10 @@ export const PERMISSIONS = [
   'mailbox.draft',
   'mailbox.review',
   'mailbox.send',
+  'mailbox.send.request',
+  'mailbox.send.execute',
+  'mailbox.send.review',
+  'mailbox.send.manage',
   'integrations.manage',
   'approvals.manage',
   'settings.manage',
@@ -88,6 +92,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, readonly Permission[]> 
     'mailbox.connect',
     'mailbox.draft',
     'mailbox.review',
+    'mailbox.send.review',
   ],
   Manager: [
     'leads.read',
@@ -102,10 +107,11 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, readonly Permission[]> 
     'mailbox.read',
     'mailbox.draft',
     'mailbox.review',
+    'mailbox.send.review',
   ],
-  Sales: ['leads.read', 'leads.write', 'outreach.send_approved', 'meetings.book', 'mailbox.read', 'mailbox.draft'],
+  Sales: ['leads.read', 'leads.write', 'outreach.send_approved', 'meetings.book', 'mailbox.read', 'mailbox.draft', 'mailbox.send.request'],
   Analyst: ['leads.read', 'audit.read', 'mailbox.read'],
-  Reviewer: ['leads.read', 'approvals.review', 'audit.read', 'mailbox.read', 'mailbox.review'],
+  Reviewer: ['leads.read', 'approvals.review', 'audit.read', 'mailbox.read', 'mailbox.review', 'mailbox.send.review'],
   OWNER: ALL,
   ADMIN: ALL.filter((permission) => permission !== 'tenant.export'),
   SALES_MANAGER: [
@@ -134,6 +140,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, readonly Permission[]> 
     'mailbox.read',
     'mailbox.draft',
     'mailbox.review',
+    'mailbox.send.review',
   ],
   SALES_AGENT: [
     'products.read',
@@ -149,6 +156,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, readonly Permission[]> 
     'meetings.manage',
     'mailbox.read',
     'mailbox.draft',
+    'mailbox.send.request',
   ],
   VIEWER: ['products.read', 'leads.read', 'conversations.read', 'agents.read', 'audit.read', 'crm.accounts.read', 'crm.contacts.read', 'crm.leads.read', 'crm.suppression.read', 'mailbox.read'],
 };

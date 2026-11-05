@@ -98,13 +98,18 @@ export function resolveThreadKey(message: { providerThreadId?: string | null; in
   return { providerThreadId: fresh, matched: false };
 }
 
-export function draftDigest(input: { sender: string; recipients: string[]; subject: string; body: string; attachments: string[] }): string {
+export function draftDigest(input: { sender: string; recipients: string[]; cc?: string[]; bcc?: string[]; subject: string; body: string; html?: string; attachments: string[]; purpose?: string; threadRef?: string }): string {
   const canonical = JSON.stringify({
     sender: input.sender.trim().toLowerCase(),
     recipients: input.recipients.map((item) => item.trim().toLowerCase()).sort(),
+    cc: (input.cc ?? []).map((item) => item.trim().toLowerCase()).sort(),
+    bcc: (input.bcc ?? []).map((item) => item.trim().toLowerCase()).sort(),
     subject: input.subject,
     body: input.body,
+    html: input.html ?? '',
     attachments: [...input.attachments].sort(),
+    purpose: input.purpose ?? '',
+    threadRef: input.threadRef ?? '',
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -115,14 +120,14 @@ export function pkcePair(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-export function oauthAuthorizeUrl(provider: 'google' | 'microsoft', input: { clientId?: string; redirectUri: string; state: string; challenge: string }): string | null {
+export function oauthAuthorizeUrl(provider: 'google' | 'microsoft', input: { clientId?: string; redirectUri: string; state: string; challenge: string; send?: boolean }): string | null {
   if (!input.clientId) return null;
   if (provider === 'google') {
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', input.clientId);
     url.searchParams.set('redirect_uri', input.redirectUri);
     url.searchParams.set('response_type', 'code');
-    url.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly');
+    url.searchParams.set('scope', input.send ? 'https://www.googleapis.com/auth/gmail.send' : 'https://www.googleapis.com/auth/gmail.readonly');
     url.searchParams.set('state', input.state);
     url.searchParams.set('code_challenge', input.challenge);
     url.searchParams.set('code_challenge_method', 'S256');
@@ -134,7 +139,7 @@ export function oauthAuthorizeUrl(provider: 'google' | 'microsoft', input: { cli
   url.searchParams.set('client_id', input.clientId);
   url.searchParams.set('redirect_uri', input.redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'offline_access User.Read Mail.Read');
+  url.searchParams.set('scope', input.send ? 'offline_access Mail.Send' : 'offline_access User.Read Mail.Read');
   url.searchParams.set('state', input.state);
   url.searchParams.set('code_challenge', input.challenge);
   url.searchParams.set('code_challenge_method', 'S256');
@@ -172,13 +177,17 @@ export type SendGateInput = {
   attachmentBlocked: boolean;
   duplicateAccepted: boolean;
   rateLimited: boolean;
+  recipientLimitExceeded: boolean;
   liveSendEnabled: boolean;
   tenantSendingEnabled: boolean;
+  mailboxSendingEnabled: boolean;
+  killSwitch: boolean;
+  providerReady: boolean;
   humanAction: boolean;
   captureMailbox: boolean;
 };
 
-export function evaluateSendGate(input: SendGateInput): { decision: 'BLOCK' | 'CAPTURE'; reasons: string[]; sent: false } {
+export function evaluateSendGate(input: SendGateInput): { decision: 'BLOCK' | 'CAPTURE' | 'ALLOW'; reasons: string[]; sent: false } {
   const reasons: string[] = [];
   if (!input.organizationActive) reasons.push('ORGANIZATION_INACTIVE');
   if (!input.connectionReadable) reasons.push('CONNECTION_UNAVAILABLE');
@@ -200,13 +209,46 @@ export function evaluateSendGate(input: SendGateInput): { decision: 'BLOCK' | 'C
   if (input.attachmentBlocked) reasons.push('ATTACHMENT_BLOCKED');
   if (input.duplicateAccepted) reasons.push('DUPLICATE_SEND');
   if (input.rateLimited) reasons.push('RATE_LIMIT');
+  if (input.recipientLimitExceeded) reasons.push('RECIPIENT_LIMIT');
+  if (input.killSwitch) reasons.push('KILL_SWITCH');
   if (!input.humanAction) reasons.push('HUMAN_ACTION_REQUIRED');
   if (reasons.length) return { decision: 'BLOCK', reasons, sent: false };
   if (input.captureMailbox) return { decision: 'CAPTURE', reasons: ['CAPTURE_MODE'], sent: false };
-  if (!input.liveSendEnabled || !input.tenantSendingEnabled || !input.sendScope) {
+  if (!input.liveSendEnabled || !input.tenantSendingEnabled || !input.mailboxSendingEnabled || !input.sendScope) {
     return { decision: 'BLOCK', reasons: ['LIVE_SEND_NOT_CONFIGURED'], sent: false };
   }
-  return { decision: 'BLOCK', reasons: ['LIVE_SEND_NOT_IMPLEMENTED'], sent: false };
+  if (!input.providerReady) return { decision: 'BLOCK', reasons: ['LIVE_SEND_NOT_IMPLEMENTED'], sent: false };
+  return { decision: 'ALLOW', reasons: ['PROVIDER_READY'], sent: false };
+}
+
+export function headerSafe(value: string): boolean {
+  return !/[\r\n]/.test(value);
+}
+
+export function normalizeOutboundRecipients(groups: Array<readonly string[] | undefined>): { recipients: string[]; invalid: boolean } {
+  const seen = new Set<string>();
+  const recipients: string[] = [];
+  let invalid = false;
+  for (const group of groups) {
+    for (const raw of group ?? []) {
+      const value = raw.trim().toLowerCase();
+      if (!value || !headerSafe(raw) || !/^[^@\s]+@[^@\s]+$/.test(value)) {
+        invalid = true;
+        continue;
+      }
+      if (seen.has(value)) continue;
+      seen.add(value);
+      recipients.push(value);
+    }
+  }
+  if (!recipients.length) invalid = true;
+  return { recipients, invalid };
+}
+
+export function sendScopeGranted(provider: string, scopes: string[]): boolean {
+  if (provider === 'google') return scopes.some((scope) => scope === 'https://www.googleapis.com/auth/gmail.send' || scope === 'gmail.send');
+  if (provider === 'microsoft') return scopes.some((scope) => scope === 'Mail.Send' || scope.endsWith('/Mail.Send'));
+  return false;
 }
 
 export function classifyIntent(text: string): { intent: string; urgent: boolean; objection: boolean; question: boolean } {

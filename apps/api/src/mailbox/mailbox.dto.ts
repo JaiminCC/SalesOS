@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 export class MailboxListDto {
   @IsOptional() @IsString() @MaxLength(200) q?: string;
@@ -17,6 +17,17 @@ export class CaptureMailboxDto {
 export class OauthStartDto {
   @IsIn(['google', 'microsoft']) provider!: 'google' | 'microsoft';
   @IsString() @MaxLength(500) redirectUri!: string;
+  @IsOptional() @IsUUID() connectionId?: string;
+}
+
+export class SendPolicyDto {
+  @IsBoolean() enabled!: boolean;
+  @IsBoolean() killSwitch!: boolean;
+}
+
+export class MailboxSendingDto {
+  @IsUUID() id!: string;
+  @IsBoolean() sendingEnabled!: boolean;
 }
 
 export class ImportMessagesDto {
@@ -58,7 +69,9 @@ export class DraftBodyDto {
   @IsOptional() @IsUUID() threadId?: string;
   @IsString() @MaxLength(300) subject!: string;
   @IsString() @MaxLength(20000) body!: string;
-  @IsArray() recipients!: string[];
+  @IsArray() @IsString({ each: true }) recipients!: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) cc?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) bcc?: string[];
 }
 
 export class DraftDecisionDto {
@@ -68,6 +81,11 @@ export class DraftDecisionDto {
 
 export class IdDto {
   @IsUUID() id!: string;
+}
+
+export class InvestigationDto {
+  @IsUUID() id!: string;
+  @IsString() @MaxLength(500) note!: string;
 }
 
 export class AnalyzeDto {

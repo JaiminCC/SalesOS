@@ -1,5 +1,6 @@
 import { Queue, UnrecoverableError, type Job } from 'bullmq';
 import { Prisma, decodeEncryptionKey, importCrmBatch, qualifyCrmLead, reconcileSend, runCrmDiscovery, sendDraft, syncConnection, withTenant, type PrismaClient } from '@salesos/database';
+import { reconcileGmail, reconcileGraph, sendWithGmail, sendWithGraph } from '@salesos/integrations';
 import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_EVENT, MAILBOX_SEND_JOB, MAILBOX_SYNC_EVENT, MAILBOX_SYNC_JOB, foundationJobId, liveEmailSendEnabled, type AgentRunJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData } from '@salesos/shared';
 
 type PendingOutbox = {
@@ -94,7 +95,13 @@ export async function processMailboxJob(job: Job<MailboxJobData>, prisma: Prisma
     if (!attempt) throw new UnrecoverableError('delivery attempt is missing');
     const connection = await withTenant(prisma, tenantId, (tx) => tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId, id: attempt.connectionId } } }));
     if (!connection) throw new UnrecoverableError('mailbox connection is missing');
-    await reconcileSend(prisma, { tenantId, userId: connection.connectedBy, key }, recordId);
+    const live = liveEmailSendEnabled(process.env);
+    await reconcileSend(prisma, { tenantId, userId: connection.connectedBy, key }, recordId, live ? async (input) => {
+      if (!input.providerMessageId) return 'DELIVERY_UNKNOWN';
+      if (input.provider === 'google') return reconcileGmail(input.token, input.providerMessageId);
+      if (input.provider === 'microsoft') return reconcileGraph(input.token, input.providerMessageId);
+      return 'DELIVERY_UNKNOWN';
+    } : undefined);
   } else {
     const connection = await withTenant(prisma, tenantId, (tx) => tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
     const userId = connection?.connectedBy;
@@ -106,7 +113,11 @@ export async function processMailboxJob(job: Job<MailboxJobData>, prisma: Prisma
     } else if (job.name === MAILBOX_SEND_JOB) {
       const draft = await withTenant(prisma, tenantId, (tx) => tx.mailboxDraft.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
       if (!draft) throw new UnrecoverableError('draft is missing');
-      await sendDraft(prisma, { tenantId, userId: draft.createdBy, key }, recordId, liveEmailSendEnabled(process.env));
+      const live = liveEmailSendEnabled(process.env);
+      await sendDraft(prisma, { tenantId, userId: draft.createdBy, key }, recordId, live, live ? async (input) => {
+        const message = { from: input.from, to: input.to, cc: input.cc, bcc: input.bcc, subject: input.subject, text: input.body, threadId: input.threadRef || undefined };
+        return input.provider === 'microsoft' ? sendWithGraph(input.token, message) : sendWithGmail(input.token, message);
+      } : undefined);
     } else throw new UnrecoverableError('unexpected job name');
   }
   await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.updateMany({ where: { tenantId, id: job.data.outboxId, status: 'PENDING' }, data: { status: 'PROCESSED', processedAt: new Date() } }));

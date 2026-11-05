@@ -58,6 +58,14 @@ describe.skipIf(!process.env.DATABASE_URL || !process.env.DATABASE_URL_APP)('mai
     expect(providers.body.data.providers.find((item: { id: string }) => item.id === 'google').status).toBe('NOT_CONFIGURED');
     expect(providers.body.data.liveSend).toBe('NOT CONFIGURED');
     const origin = (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',')[0]!.trim().replace(/\/$/, '');
+    const sending = await post('/api/v1/management/email-sending/status', ownerCookie, {});
+    expect(sending.body.data.deployment).toBe('SEND DISABLED');
+    expect(sending.body.data.sendNow).toBe(false);
+    expect(sending.body.data.attachments).toBe('NOT SUPPORTED');
+    const sendAuth = await post('/api/v1/management/mailboxes/oauth/send-start', ownerCookie, { provider: 'google', redirectUri: `${origin}/workspace/inbox` });
+    expect(sendAuth.body.data.status).toBe('NOT_CONFIGURED');
+    expect(sendAuth.body.data.send).toBe(true);
+    expect(sendAuth.body.data.sendingEnabled).toBe(false);
     const started = await post('/api/v1/management/mailboxes/oauth/start', ownerCookie, { provider: 'google', redirectUri: `${origin}/workspace/inbox` });
     expect(started.status, JSON.stringify(started.body)).toBe(200);
     expect(started.body.data.status).toBe('NOT_CONFIGURED');
