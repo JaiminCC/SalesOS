@@ -50,3 +50,18 @@ export type CrmJobData = {
   recordId: string;
   outboxId: string;
 };
+
+export const MAILBOX_SYNC_JOB = 'mailbox.sync';
+export const MAILBOX_SYNC_EVENT = 'mailbox.sync.requested.v1';
+export const MAILBOX_INCREMENTAL_JOB = 'mailbox.incremental_sync';
+export const MAILBOX_INCREMENTAL_EVENT = 'mailbox.incremental_sync.requested.v1';
+export const MAILBOX_SEND_JOB = 'mailbox.send';
+export const MAILBOX_SEND_EVENT = 'mailbox.send.requested.v1';
+export const MAILBOX_RECONCILE_JOB = 'mailbox.delivery_reconcile';
+export const MAILBOX_RECONCILE_EVENT = 'mailbox.delivery_reconcile.requested.v1';
+
+export type MailboxJobData = {
+  tenantId: string;
+  recordId: string;
+  outboxId: string;
+};

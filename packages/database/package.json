@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
+    "@salesos/integrations": "workspace:*",
     "@salesos/shared": "workspace:*",
     "pg": "^8.16.3"
   },

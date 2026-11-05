@@ -46,6 +46,22 @@ export const TENANT_TABLES = [
   'crm_discovery_candidates',
   'crm_contact_policies',
   'crm_work_leases',
+  'mailbox_connections',
+  'mailbox_access',
+  'mailbox_oauth_states',
+  'mailbox_sync_cursors',
+  'mailbox_threads',
+  'mailbox_messages',
+  'mailbox_attachments',
+  'mailbox_thread_links',
+  'mailbox_ai_analyses',
+  'mailbox_drafts',
+  'mailbox_draft_versions',
+  'mailbox_approvals',
+  'mailbox_send_attempts',
+  'mailbox_delivery_events',
+  'mailbox_sync_events',
+  'mailbox_webhook_receipts',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

@@ -100,7 +100,7 @@ Signed out, this page remains the simulated demonstration. Signed in, it renders
 | Duplicate review and merge | `duplicates/list`, `duplicates/merge` | `crm.leads.read` or `crm.leads.merge` |
 | Contact windows | `contact-policies/get`, `contact-policies/update` | `crm.leads.read` or `crm.contact_policy.manage` |
 
-There is no send endpoint. Campaigns, inbox, qualification prototype, meetings, and WhatsApp stay simulated.
+There is no campaign send endpoint. Campaigns, the qualification prototype, meetings, and WhatsApp stay simulated. The signed-in inbox is section 8.
 
 ## 7. Campaigns (`campaigns`)
 
@@ -117,17 +117,25 @@ Phase 6, with product ids from Phase 3. Tests: AT-17 prohibited channel; daily c
 
 ## 8. AI Inbox (`inbox`)
 
-| Control | API |
-|---|---|
-| List | `GET /tenants/{tenantId}/conversations` |
-| Thread | `GET /tenants/{tenantId}/conversations/{id}/messages` |
-| Generate draft | `POST /tenants/{tenantId}/conversations/{id}/drafts` |
-| Send | `POST /tenants/{tenantId}/drafts/{draftId}/send` with idempotency key. 202 means queued. The bubble shows "Sent" only after the message status says so. |
-| Human handoff | `POST /conversations/{id}/takeover` |
-| Requirements panel | `GET` qualification answers for the lead |
-| Prepare meeting | `POST /tenants/{tenantId}/meetings/propose` |
+Signed-out inbox stays the simulated demonstration. Signed-in `/workspace/inbox` uses `InboxDesk` and these body endpoints. Identifiers are in the JSON body, not the path.
 
-Phase 6 for mail. Phase 7 for propose. Tests: AT-05 opt-out after approval; AT-06 five webhook deliveries, one message; AT-10 takeover wins over an in-flight draft; opt-out intent does not produce a promotional body.
+| Control | API | Permission |
+|---|---|---|
+| Provider status | `POST /api/v1/management/mailboxes/providers` | `mailbox.read` |
+| List and open a mailbox | `mailboxes/list`, `mailboxes/get` | `mailbox.read` |
+| Add a capture mailbox | `mailboxes/capture` | `mailbox.connect` |
+| Start OAuth | `mailboxes/oauth/start` | `mailbox.connect` |
+| Disconnect | `mailboxes/disconnect` | `mailbox.connect` |
+| Import and sync | `mailbox-sync/import`, `mailbox-sync/run` | `mailbox.connect` |
+| Thread list and detail | `threads/list`, `threads/get` | `mailbox.read` |
+| Link and assign | `threads/link`, `threads/assign` | `mailbox.draft` |
+| Drafts | `drafts/list`, `drafts/save`, `drafts/submit` | `mailbox.read` or `mailbox.draft` |
+| Decision | `email-approvals/decide` | `mailbox.review` |
+| Send review | `email-send/run` | `mailbox.send` |
+| Delivery | `delivery/list`, `delivery/reconcile` | `mailbox.read` |
+| Analysis run | `inbox-ai/run` | `mailbox.draft` |
+
+OAuth return is `GET /api/v1/mailbox/oauth/callback`. Capture webhooks are `POST /api/v1/mailbox/webhooks/capture`. The screen shows `SEND DISABLED`, `NOT CONFIGURED`, and `MOCK / CAPTURE MODE`. A capture result is not labeled sent. Live send is not available from this screen.
 
 ## 9. Qualification (`qualification`)
 

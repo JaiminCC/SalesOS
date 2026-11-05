@@ -94,12 +94,16 @@ export class RunCreateDto {
   goal?: string;
 
   @IsOptional()
-  @IsIn(['PRODUCT_RESEARCH', 'LEAD_RESEARCH_AND_QUALIFY'])
-  planKind?: 'PRODUCT_RESEARCH' | 'LEAD_RESEARCH_AND_QUALIFY';
+  @IsIn(['PRODUCT_RESEARCH', 'LEAD_RESEARCH_AND_QUALIFY', 'INBOX_ANALYZE_AND_DRAFT'])
+  planKind?: 'PRODUCT_RESEARCH' | 'LEAD_RESEARCH_AND_QUALIFY' | 'INBOX_ANALYZE_AND_DRAFT';
 
   @IsOptional()
   @IsUUID()
   leadId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  threadId?: string;
 }
 
 export class ModelCreateDto {

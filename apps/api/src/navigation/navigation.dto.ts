@@ -24,6 +24,9 @@ export const NAVIGATION_TYPES = [
   'crm_suppression',
   'crm_duplicate',
   'crm_policy',
+  'mailbox_connection',
+  'mailbox_thread',
+  'mailbox_draft',
 ] as const;
 
 export class CreateNavigationDto {

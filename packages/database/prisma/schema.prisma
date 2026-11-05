@@ -1128,3 +1128,269 @@ model CrmContactPolicy {
 
   @@map("crm_contact_policies")
 }
+
+model MailboxConnection {
+  tenantId               String    @map("tenant_id") @db.Uuid
+  id                     String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider               String
+  providerMailboxId      String    @map("provider_mailbox_id")
+  address                String
+  connectedBy            String    @map("connected_by") @db.Uuid
+  scopes                 Json      @default("[]")
+  accessTokenCiphertext  Bytes?    @map("access_token_ciphertext")
+  refreshTokenCiphertext Bytes?    @map("refresh_token_ciphertext")
+  tokenExpiresAt         DateTime? @map("token_expires_at") @db.Timestamptz(6)
+  status                 String
+  lastSyncAt             DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  lastError              String?   @map("last_error")
+  sendingEnabled         Boolean   @default(false) @map("sending_enabled")
+  revocationVersion      Int       @default(0) @map("revocation_version")
+  live                   Boolean   @default(false)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, provider, providerMailboxId])
+  @@map("mailbox_connections")
+}
+
+model MailboxAccess {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  accessRole   String   @map("access_role")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, connectionId, userId])
+  @@map("mailbox_access")
+}
+
+model MailboxOauthState {
+  tenantId            String    @map("tenant_id") @db.Uuid
+  id                  String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stateHash           String    @unique @map("state_hash")
+  provider            String
+  verifierCiphertext  Bytes     @map("verifier_ciphertext")
+  redirectUri         String    @map("redirect_uri")
+  createdBy           String    @map("created_by") @db.Uuid
+  expiresAt           DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt          DateTime? @map("consumed_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_oauth_states")
+}
+
+model MailboxSyncCursor {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  cursor       String?
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, connectionId])
+  @@map("mailbox_sync_cursors")
+}
+
+model MailboxThread {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId     String   @map("connection_id") @db.Uuid
+  providerThreadId String   @map("provider_thread_id")
+  subject          String   @default("")
+  participants     Json     @default("[]")
+  lastActivityAt   DateTime @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+  unreadCount      Int      @default(0) @map("unread_count")
+  status           String   @default("OPEN")
+  classification   String?
+  ownerUserId      String?  @map("owner_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, connectionId, providerThreadId])
+  @@map("mailbox_threads")
+}
+
+model MailboxMessage {
+  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId      String   @map("connection_id") @db.Uuid
+  threadId          String   @map("thread_id") @db.Uuid
+  providerMessageId String   @map("provider_message_id")
+  internetMessageId String?  @map("internet_message_id")
+  inReplyTo         String?  @map("in_reply_to")
+  referencesHeader  String?  @map("references_header")
+  direction         String
+  folder            String   @default("INBOX")
+  sender            String
+  recipients        Json     @default("[]")
+  subject           String   @default("")
+  textBody          String   @default("") @map("text_body")
+  htmlSafe          String   @default("") @map("html_safe")
+  receivedAt        DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  provenance        String
+  sizeBytes         Int      @default(0) @map("size_bytes")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, connectionId, providerMessageId])
+  @@map("mailbox_messages")
+}
+
+model MailboxAttachment {
+  tenantId           String  @map("tenant_id") @db.Uuid
+  id                 String  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId          String  @map("message_id") @db.Uuid
+  fileName           String  @map("file_name")
+  contentType        String  @map("content_type")
+  sizeBytes          Int     @map("size_bytes")
+  sha256             String
+  blocked            Boolean @default(false)
+  contentCiphertext  Bytes?  @map("content_ciphertext")
+
+  @@id([tenantId, id])
+  @@map("mailbox_attachments")
+}
+
+model MailboxThreadLink {
+  tenantId    String   @map("tenant_id") @db.Uuid
+  id          String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  threadId    String   @map("thread_id") @db.Uuid
+  subjectType String   @map("subject_type")
+  subjectId   String   @map("subject_id") @db.Uuid
+  createdBy   String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, threadId, subjectType, subjectId])
+  @@map("mailbox_thread_links")
+}
+
+model MailboxAiAnalysis {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  threadId      String   @map("thread_id") @db.Uuid
+  runId         String?  @map("run_id") @db.Uuid
+  summary       String
+  intent        String
+  signals       Json     @default("{}")
+  modelProvider String?  @map("model_provider")
+  modelName     String?  @map("model_name")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_ai_analyses")
+}
+
+model MailboxDraft {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId   String   @map("connection_id") @db.Uuid
+  threadId       String?  @map("thread_id") @db.Uuid
+  subject        String   @default("")
+  body           String   @default("")
+  recipients     Json     @default("[]")
+  status         String   @default("DRAFT")
+  currentVersion Int      @default(1) @map("current_version")
+  aiGenerated    Boolean  @default(false) @map("ai_generated")
+  createdBy      String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_drafts")
+}
+
+model MailboxDraftVersion {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftId          String   @map("draft_id") @db.Uuid
+  version          Int
+  subject          String
+  body             String
+  recipients       Json
+  bodySha256       String   @map("body_sha256")
+  aiGenerated      Boolean  @default(false) @map("ai_generated")
+  runId            String?  @map("run_id") @db.Uuid
+  productVersionId String?  @map("product_version_id") @db.Uuid
+  citations        Json     @default("[]")
+  createdBy        String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, draftId, version])
+  @@map("mailbox_draft_versions")
+}
+
+model MailboxApproval {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftVersionId String   @map("draft_version_id") @db.Uuid
+  decision       String
+  decidedBy      String?  @map("decided_by") @db.Uuid
+  payloadSha256  String   @map("payload_sha256")
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_approvals")
+}
+
+model MailboxSendAttempt {
+  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftVersionId    String   @map("draft_version_id") @db.Uuid
+  approvalId        String?  @map("approval_id") @db.Uuid
+  connectionId      String   @map("connection_id") @db.Uuid
+  state             String
+  provider          String
+  providerRequestId String?  @map("provider_request_id")
+  providerMessageId String?  @map("provider_message_id")
+  failureReason     String?  @map("failure_reason")
+  reconciliation    String?
+  sent              Boolean  @default(false)
+  idempotencyKey    String   @map("idempotency_key")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@map("mailbox_send_attempts")
+}
+
+model MailboxDeliveryEvent {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  id        String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptId String   @map("attempt_id") @db.Uuid
+  kind      String
+  detail    Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_delivery_events")
+}
+
+model MailboxSyncEvent {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  status       String
+  detail       String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_sync_events")
+}
+
+model MailboxWebhookReceipt {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId  String   @map("connection_id") @db.Uuid
+  provider      String
+  eventId       String   @map("event_id")
+  payloadSha256 String   @map("payload_sha256")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, provider, eventId])
+  @@map("mailbox_webhook_receipts")
+}

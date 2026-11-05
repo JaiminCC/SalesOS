@@ -37,6 +37,9 @@ const READ_PERMISSION: Record<string, string | null> = {
   crm_suppression: 'crm.suppression.read',
   crm_duplicate: 'crm.leads.read',
   crm_policy: 'crm.leads.read',
+  mailbox_connection: 'mailbox.read',
+  mailbox_thread: 'mailbox.read',
+  mailbox_draft: 'mailbox.read',
 };
 
 @Injectable()
@@ -184,6 +187,9 @@ export class NavigationService {
     if (input.resourceType === 'crm_discovery') await this.visibleCrm(actor, 'crmDiscoveryJob', input.resourceId!);
     if (input.resourceType === 'crm_suppression') await this.visibleCrm(actor, 'crmSuppression', input.resourceId!);
     if (input.resourceType === 'crm_duplicate') await this.visibleCrm(actor, 'crmDuplicateCandidate', input.resourceId!);
+    if (input.resourceType === 'mailbox_connection') await this.visibleCrm(actor, 'mailboxConnection', input.resourceId!);
+    if (input.resourceType === 'mailbox_thread') await this.visibleCrm(actor, 'mailboxThread', input.resourceId!);
+    if (input.resourceType === 'mailbox_draft') await this.visibleCrm(actor, 'mailboxDraft', input.resourceId!);
   }
 
   private async visibleMember(actor: SessionContext, userId: string): Promise<void> {
@@ -207,7 +213,7 @@ export class NavigationService {
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Session was not found');
   }
 
-  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate', id: string): Promise<void> {
+  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate' | 'mailboxConnection' | 'mailboxThread' | 'mailboxDraft', id: string): Promise<void> {
     const tenantId = this.tenant(actor);
     const row = await withTenant(this.database.prisma, tenantId, (tx) => (tx[model] as { findUnique: (input: unknown) => Promise<unknown> }).findUnique({ where: { tenantId_id: { tenantId, id } } }));
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Record was not found');
@@ -249,6 +255,8 @@ function writePermission(resourceType: string, action: string): string | null {
   if (resourceType === 'crm_suppression') return 'crm.suppression.manage';
   if (resourceType === 'crm_duplicate') return 'crm.leads.merge';
   if (resourceType === 'crm_policy') return 'crm.contact_policy.manage';
+  if (resourceType === 'mailbox_connection') return 'mailbox.connect';
+  if (resourceType === 'mailbox_thread' || resourceType === 'mailbox_draft') return 'mailbox.draft';
   return 'settings.manage';
 }
 

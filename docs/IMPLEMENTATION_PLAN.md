@@ -370,7 +370,13 @@ Owner assignment checks `member_is_assignable`. Lead explanation runs through th
 
 **Status:** Implemented. See `docs/SPRINT_5_2_COMPLETION.md` and `docs/SPRINT_5_FINAL_ACCEPTANCE.md`.
 
-Assignment and membership changes share a lock, and inactive members lose actionable ownership. Qualification explanations must match the deterministic breakdown or the stored text is marked insufficient. CRM jobs recover after process kill. External discovery stays unconfigured. No outbound sender was added. Sprint 6 has not started.
+Assignment and membership changes share a lock, and inactive members lose actionable ownership. Qualification explanations must match the deterministic breakdown or the stored text is marked insufficient. CRM jobs recover after process kill. External discovery stays unconfigured. No outbound sender was added.
+
+### Sprint 6 — Mailbox capture, review, and a closed send gate
+
+**Status:** Partial. See `docs/SPRINT_6_COMPLETION.md` and `docs/SPRINT_6_1_COMPLETION.md`.
+
+Capture import, threading, drafts, human approval, and send-time blocking are implemented. Sprint 6.1 adds read-only Gmail and Microsoft Graph synchronization, capture-webhook hardening, and one local inbox analysis. Sprint 6.2 rechecks authorization before any provider response is stored and covers disconnect, suspension, permission loss, lease replacement, and refresh races. Live Google and Microsoft mailboxes were not configured here. Live sending is not implemented. `evaluateSendGate` returns `sent: false`. Sprint 7 has not started.
 
 ### T4.1 Persist runs, steps, and actions
 

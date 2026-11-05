@@ -2,8 +2,8 @@ export { apiError, apiSuccess } from './envelope';
 export type { ApiErrorBody, ApiMeta, ApiSuccess } from './envelope';
 export { healthLiveSchema, healthReadySchema, dependencyStatusSchema } from './health';
 export type { HealthLive, HealthReady } from './health';
-export { AGENT_RUN_EVENT, AGENT_RUN_JOB, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, FOUNDATION_QUEUE, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, foundationJobId, foundationPingModes, foundationQueueName } from './jobs';
-export type { AgentRunJobData, CrmJobData, FoundationJobData, FoundationPingMode, KnowledgeJobData } from './jobs';
+export { AGENT_RUN_EVENT, AGENT_RUN_JOB, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, FOUNDATION_QUEUE, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_EVENT, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_EVENT, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_EVENT, MAILBOX_SEND_JOB, MAILBOX_SYNC_EVENT, MAILBOX_SYNC_JOB, foundationJobId, foundationPingModes, foundationQueueName } from './jobs';
+export type { AgentRunJobData, CrmJobData, FoundationJobData, FoundationPingMode, KnowledgeJobData, MailboxJobData } from './jobs';
 export { CRM_LEAD_STAGES, CSV_LIMITS, DEFAULT_SCORE_WEIGHTS, DISCOVERY_PROVIDERS, ELIGIBILITY_STATES, IMPORT_FIELDS, PROVENANCE, canTransitionCrmLead, compareTextList, discoveryCandidates, evaluateEligibility, evaluateQuietHours, externalDiscoveryAdapter, externalDiscoveryStatus, mapImportRow, neutralizeCsvFormula, normalizeDomain, normalizeEmail, parseCsv, scoreIcp } from './crm';
 export type { CrmLeadStage, DiscoveryAdapterContract, DiscoveryProvider, EligibilityFacts, EligibilityState, ExternalDiscoveryStatus, Fit, Provenance, QuietHoursPolicy, QuietHoursResult, ScoreDimension, ScoreInput, ScoreResult } from './crm';
 export { LEAD_EXPLANATION_SCHEMA, acceptLeadExplanation, deterministicQualificationText, officialFromPrompt } from './qualification-explanation';
@@ -18,9 +18,11 @@ export type { RunLimits } from './limits';
 export { budgetStop, decide, POLICY_VERSION, textHasCommercialCommitment } from './policy';
 export type { PolicyAction, PolicyContext, PolicyDecision, PolicyResult } from './policy';
 export { OWNER_ROLE_NAMES, PERMISSIONS, SYSTEM_ROLE_PERMISSIONS, SYSTEM_ROLES, isPermission } from './permissions';
-export { LEAD_RESEARCH_PLAN, TOOL_REGISTRY, buildLeadResearchPlan, buildSupervisorPlan, toolDefinition, validatePlan } from './tools';
+export { INBOX_ANALYZE_PLAN, LEAD_RESEARCH_PLAN, TOOL_REGISTRY, buildInboxPlan, buildLeadResearchPlan, buildSupervisorPlan, toolDefinition, validatePlan } from './tools';
 export type { PlanStep, ToolDefinition, ToolRisk } from './tools';
 export { redactText, redactValue } from './redact';
+export { allowedRedirect, attachmentAllowed, captureWebhookStatus, classifyIntent, draftDigest, evaluateSendGate, inboxAnalysisPrompt, liveEmailSendEnabled, mailboxProviders, oauthAuthorizeUrl, pkcePair, plainText, resolveThreadKey, sanitizeEmailHtml } from './mailbox';
+export type { MailboxCapability, MailboxProviderDescriptor, MailboxProviderStatus, SendGateInput, ThreadHint } from './mailbox';
 export type { Permission, SystemRole } from './permissions';
 export {
   AGENT_ACTION_STATES,

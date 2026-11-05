@@ -13,5 +13,6 @@ export { loadPublishedContext, ContextError } from './published-context';
 export type { PinnedContext } from './published-context';
 export { ingestKnowledgeDocument, listDueKnowledgeDeletions, purgeKnowledgeContent } from './knowledge-ingest';
 export { audienceForLead, executeLeadTool, importCrmBatch, leadPromptFacts, lockAssignableOwner, memberIsAssignable, qualifyCrmLead, runCrmDiscovery, storeQualification } from './crm-work';
+export { canAccess, encryptToken, executeInboxTool, hashState, inboxPromptFacts, queueMailboxImport, reconcileSend, reviewDraft, revokeMailboxConnection, saveDraft, sendDraft, submitDraft, syncConnection, syncMailbox } from './mailbox-work';
 export { withTenant } from './with-tenant';
 export { Prisma, PrismaClient } from '@prisma/client';

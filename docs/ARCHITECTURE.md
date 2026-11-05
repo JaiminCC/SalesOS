@@ -327,7 +327,7 @@ The selected record is an opaque navigation context. `POST /api/v1/navigation/co
 
 Item mutations that must not put identifiers in the URL use `POST /api/v1/management/...` with the identifier in the JSON body. The Sprint 2 and Sprint 3 routes under `/api/v1/products`, `/api/v1/organizations`, and `/api/v1/auth` remain. Bulk changes run one record at a time, at most 50 identifiers, and return a result per identifier. Queries inside a tenant transaction run one after another so Prisma does not interleave statements on one transaction client.
 
-Audit events stay append-only. Published product versions stay immutable. Knowledge deletion still follows retention and tombstone rules. Campaigns, conversations, meetings, analytics, SSO, integrations, WhatsApp, and webhooks stay simulated. Signed-in lead intelligence is live as of Sprint 5.
+Audit events stay append-only. Published product versions stay immutable. Knowledge deletion still follows retention and tombstone rules. Campaigns, meetings, analytics, SSO, WhatsApp, and the signed-out inbox stay simulated. Signed-in lead intelligence is live as of Sprint 5. Signed-in mailbox capture, drafts, and the send gate are Sprint 6. Live provider mail and live sending are not configured.
 
 ## 16. Agent management (Sprint 4)
 
@@ -352,3 +352,7 @@ Assignment takes `pg_advisory_xact_lock(hashtextextended(tenant, 0))` and then `
 `lead.qualification.explain` must return the official score, grade, and dimension fits. A payload that only repeats the score is `INSUFFICIENT_EXPLANATION`. The stored explanation then comes from the deterministic breakdown, and the qualification row does not name a model. The score still comes from `scoreIcp`.
 
 `crm.import`, `crm.discovery`, and `crm.qualify` claim `crm_work_leases`, commit each row, and can be continued after the lease expires. A second worker refuses the job while the lease is current. Cancellation, a suspended tenant, and a revoked permission stop the job. See `docs/CRM_WORKER_RECOVERY.md` and `docs/LEAD_QUALIFICATION_EXPLANATIONS.md`.
+
+## 20. Mailbox capture and send gate (Sprint 6 and 6.1)
+
+Signed-in AI Conversations uses `InboxDesk` and PostgreSQL. The signed-out inbox stays simulated. A capture mailbox imports messages the user supplies. Google and Microsoft read-only sync is implemented behind OAuth and runs against provider HTTP in the worker. Before a provider response is stored, the worker rechecks the tenant, the connecting user, mailbox access, read-only scopes, the lease, and `revocation_version`. A page downloaded before revocation is discarded. A connection stays unlabeled as live until a consented mailbox has been verified. No Google or Microsoft client credentials are configured in this workspace, so live mailbox import was not executed. `evaluateSendGate` never returns a live allow. Capture success is `sent: false`. Inbox analysis runs on the existing supervisor plan `INBOX_ANALYZE_AND_DRAFT`. See `docs/SPRINT_6_2_COMPLETION.md`.

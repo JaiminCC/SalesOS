@@ -1,6 +1,6 @@
 import { Queue, UnrecoverableError, type Job } from 'bullmq';
-import { Prisma, decodeEncryptionKey, importCrmBatch, qualifyCrmLead, runCrmDiscovery, withTenant, type PrismaClient } from '@salesos/database';
-import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, foundationJobId, type AgentRunJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
+import { Prisma, decodeEncryptionKey, importCrmBatch, qualifyCrmLead, reconcileSend, runCrmDiscovery, sendDraft, syncConnection, withTenant, type PrismaClient } from '@salesos/database';
+import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_EVENT, MAILBOX_SEND_JOB, MAILBOX_SYNC_EVENT, MAILBOX_SYNC_JOB, foundationJobId, liveEmailSendEnabled, type AgentRunJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData } from '@salesos/shared';
 
 type PendingOutbox = {
   tenant_id: string;
@@ -14,7 +14,7 @@ export async function listPendingOutbox(prisma: PrismaClient): Promise<PendingOu
   return prisma.$queryRaw<PendingOutbox[]>(Prisma.sql`SELECT * FROM public.list_pending_outbox(25)`);
 }
 
-export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData>): Promise<number> {
+export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData>): Promise<number> {
   const pending = await listPendingOutbox(prisma);
   let published = 0;
   for (const row of pending) {
@@ -34,6 +34,9 @@ export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<Fo
         const data: CrmJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
         const name = row.event_type === CRM_IMPORT_EVENT ? CRM_IMPORT_JOB : row.event_type === CRM_DISCOVERY_EVENT ? CRM_DISCOVERY_JOB : CRM_QUALIFY_JOB;
         await queue.add(name, data, options);
+      } else if (row.event_type === MAILBOX_SYNC_EVENT || row.event_type === MAILBOX_SEND_EVENT) {
+        const data: MailboxJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
+        await queue.add(row.event_type === MAILBOX_SYNC_EVENT ? MAILBOX_SYNC_JOB : MAILBOX_SEND_JOB, data, options);
       } else {
         continue;
       }
@@ -81,6 +84,41 @@ export async function processFoundationPing(job: Job<FoundationJobData>, prisma:
     });
     return { pong: true };
   });
+}
+
+export async function processMailboxJob(job: Job<MailboxJobData>, prisma: PrismaClient, encryptionKey: string): Promise<{ done: true }> {
+  const { tenantId, recordId } = job.data;
+  const key = decodeEncryptionKey(encryptionKey);
+  if (job.name === MAILBOX_RECONCILE_JOB) {
+    const attempt = await withTenant(prisma, tenantId, (tx) => tx.mailboxSendAttempt.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
+    if (!attempt) throw new UnrecoverableError('delivery attempt is missing');
+    const connection = await withTenant(prisma, tenantId, (tx) => tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId, id: attempt.connectionId } } }));
+    if (!connection) throw new UnrecoverableError('mailbox connection is missing');
+    await reconcileSend(prisma, { tenantId, userId: connection.connectedBy, key }, recordId);
+  } else {
+    const connection = await withTenant(prisma, tenantId, (tx) => tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
+    const userId = connection?.connectedBy;
+    if (!userId) throw new UnrecoverableError('mailbox connection is missing');
+    if (job.name === MAILBOX_SYNC_JOB || job.name === MAILBOX_INCREMENTAL_JOB) {
+      const outcome = await syncConnection(prisma, { tenantId, userId, key }, recordId);
+      if (outcome.held) throw new Error('LEASE_HELD');
+      if (outcome.rateLimited) throw new Error('RATE_LIMIT');
+    } else if (job.name === MAILBOX_SEND_JOB) {
+      const draft = await withTenant(prisma, tenantId, (tx) => tx.mailboxDraft.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
+      if (!draft) throw new UnrecoverableError('draft is missing');
+      await sendDraft(prisma, { tenantId, userId: draft.createdBy, key }, recordId, liveEmailSendEnabled(process.env));
+    } else throw new UnrecoverableError('unexpected job name');
+  }
+  await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.updateMany({ where: { tenantId, id: job.data.outboxId, status: 'PENDING' }, data: { status: 'PROCESSED', processedAt: new Date() } }));
+  return { done: true };
+}
+
+export async function scheduleMailboxReads(prisma: PrismaClient, queue: { add: (name: string, data: MailboxJobData, options: { jobId: string; removeOnComplete: number; removeOnFail: number }) => Promise<unknown> }): Promise<void> {
+  const due = await prisma.$queryRaw<Array<{ tenant_id: string; connection_id: string }>>`SELECT tenant_id, connection_id FROM public.list_due_mailbox_connections()`;
+  const hour = new Date().toISOString().slice(0, 13);
+  for (const row of due) {
+    await queue.add(MAILBOX_INCREMENTAL_JOB, { tenantId: row.tenant_id, recordId: row.connection_id, outboxId: row.connection_id }, { jobId: `mailbox-read-${row.connection_id}-${hour}`, removeOnComplete: 100, removeOnFail: 100 }).catch(() => undefined);
+  }
 }
 
 export async function processCrmJob(job: Job<CrmJobData>, prisma: PrismaClient, encryptionKey: string): Promise<{ done: true }> {

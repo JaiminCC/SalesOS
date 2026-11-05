@@ -20,6 +20,13 @@ const schema = z.object({
   SALESOS_EMBEDDING_URL: z.string().optional(),
   SALESOS_EMBEDDING_MODEL: z.string().default('configured-embedding'),
   CI: z.string().optional(),
+  SALESOS_LIVE_EMAIL_SEND_ENABLED: z.enum(['true', 'false']).default('false'),
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_OAUTH_CLIENT_ID: z.string().optional(),
+  MICROSOFT_OAUTH_CLIENT_SECRET: z.string().optional(),
+  SALESOS_CAPTURE_WEBHOOK_ENABLED: z.enum(['true', 'false']).default('false'),
+  SALESOS_CAPTURE_WEBHOOK_SECRET: z.string().optional(),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && value.MAIL_MODE === 'capture') {
     context.addIssue({
@@ -41,6 +48,15 @@ const schema = z.object({
       path: ['SALESOS_EMBEDDING_URL'],
       message: 'SALESOS_EMBEDDING_URL is required for the http embedding provider',
     });
+  }
+  if (value.SALESOS_LIVE_EMAIL_SEND_ENABLED === 'true' && (value.NODE_ENV === 'test' || value.CI === 'true')) {
+    context.addIssue({ code: 'custom', path: ['SALESOS_LIVE_EMAIL_SEND_ENABLED'], message: 'Live email sending is disabled when NODE_ENV=test or CI=true' });
+  }
+  if (value.NODE_ENV === 'production' && value.SALESOS_CAPTURE_WEBHOOK_ENABLED === 'true') {
+    context.addIssue({ code: 'custom', path: ['SALESOS_CAPTURE_WEBHOOK_ENABLED'], message: 'Capture webhooks are refused in production' });
+  }
+  if (value.SALESOS_CAPTURE_WEBHOOK_ENABLED === 'true' && (value.SALESOS_CAPTURE_WEBHOOK_SECRET ?? '').length < 32) {
+    context.addIssue({ code: 'custom', path: ['SALESOS_CAPTURE_WEBHOOK_SECRET'], message: 'Capture webhook secret must be at least 32 characters' });
   }
 });
 

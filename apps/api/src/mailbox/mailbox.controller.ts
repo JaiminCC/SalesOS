@@ -1,0 +1,124 @@
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, RawBodyRequest, Req, Res, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { apiSuccess } from '@salesos/shared';
+import { PermissionGuard, SessionGuard, type AuthenticatedRequest } from '../identity/auth.guard';
+import { RequirePermissions } from '../identity/require-permissions';
+import {
+  AnalyzeDto,
+  CaptureMailboxDto,
+  DraftBodyDto,
+  DraftDecisionDto,
+  IdDto,
+  ImportMessagesDto,
+  MailboxListDto,
+  OauthStartDto,
+  ThreadAssignDto,
+  ThreadLinkDto,
+  ThreadUnlinkDto,
+} from './mailbox.dto';
+import { MailboxConnectionService, MailboxHealthService, MailboxMessageService, MailboxSendService, MailboxSyncService, MailboxWebhookService } from './mailbox.service';
+
+@Controller('management')
+@UseGuards(SessionGuard, PermissionGuard)
+export class MailboxController {
+  constructor(
+    @Inject(MailboxConnectionService) private readonly connections: MailboxConnectionService,
+    @Inject(MailboxSyncService) private readonly syncService: MailboxSyncService,
+    @Inject(MailboxMessageService) private readonly messages: MailboxMessageService,
+    @Inject(MailboxSendService) private readonly sendService: MailboxSendService,
+    @Inject(MailboxHealthService) private readonly health: MailboxHealthService,
+  ) {}
+
+  @Post('mailboxes/providers') @HttpCode(200) @RequirePermissions('mailbox.read')
+  providers(@Req() request: AuthenticatedRequest) { return this.ok(this.connections.providers(), request.requestId); }
+
+  @Post('mailboxes/health') @HttpCode(200) @RequirePermissions('mailbox.read')
+  mailboxHealth(@Req() request: AuthenticatedRequest) { return this.ok(this.health.status(), request.requestId); }
+
+  @Post('mailboxes/list') @HttpCode(200) @RequirePermissions('mailbox.read')
+  list(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.listConnections(request.auth!, body), request.requestId); }
+
+  @Post('mailboxes/get') @HttpCode(200) @RequirePermissions('mailbox.read')
+  get(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.connection(request.auth!, body.id), request.requestId); }
+
+  @Post('mailboxes/capture') @HttpCode(200) @RequirePermissions('mailbox.connect')
+  capture(@Body() body: CaptureMailboxDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.createCapture(request.auth!, body, request.requestId), request.requestId); }
+
+  @Post('mailboxes/oauth/start') @HttpCode(200) @RequirePermissions('mailbox.connect')
+  oauth(@Body() body: OauthStartDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.startOauth(request.auth!, body), request.requestId); }
+
+  @Post('mailboxes/disconnect') @HttpCode(200) @RequirePermissions('mailbox.connect')
+  disconnect(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.disconnect(request.auth!, body.id, request.requestId), request.requestId); }
+
+  @Post('mailbox-sync/run') @HttpCode(200) @RequirePermissions('mailbox.connect')
+  sync(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.syncService.sync(request.auth!, body.id), request.requestId); }
+
+  @Post('mailbox-sync/import') @HttpCode(200) @RequirePermissions('mailbox.connect')
+  importMessages(@Body() body: ImportMessagesDto, @Req() request: AuthenticatedRequest) { return this.ok(this.syncService.importMessages(request.auth!, body), request.requestId); }
+
+  @Post('threads/list') @HttpCode(200) @RequirePermissions('mailbox.read')
+  threads(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.messages.listThreads(request.auth!, body), request.requestId); }
+
+  @Post('threads/get') @HttpCode(200) @RequirePermissions('mailbox.read')
+  thread(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.messages.thread(request.auth!, body.id), request.requestId); }
+
+  @Post('threads/link') @HttpCode(200) @RequirePermissions('mailbox.draft')
+  link(@Body() body: ThreadLinkDto, @Req() request: AuthenticatedRequest) { return this.ok(this.messages.link(request.auth!, body, request.requestId), request.requestId); }
+
+  @Post('threads/unlink') @HttpCode(200) @RequirePermissions('mailbox.draft')
+  unlink(@Body() body: ThreadUnlinkDto, @Req() request: AuthenticatedRequest) { return this.ok(this.messages.unlink(request.auth!, body, request.requestId), request.requestId); }
+
+  @Post('threads/assign') @HttpCode(200) @RequirePermissions('mailbox.draft')
+  assign(@Body() body: ThreadAssignDto, @Req() request: AuthenticatedRequest) { return this.ok(this.messages.assign(request.auth!, body), request.requestId); }
+
+  @Post('drafts/list') @HttpCode(200) @RequirePermissions('mailbox.read')
+  drafts(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.drafts(request.auth!, body), request.requestId); }
+
+  @Post('drafts/get') @HttpCode(200) @RequirePermissions('mailbox.read')
+  draft(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.draft(request.auth!, body.id), request.requestId); }
+
+  @Post('drafts/save') @HttpCode(200) @RequirePermissions('mailbox.draft')
+  save(@Body() body: DraftBodyDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.save(request.auth!, body), request.requestId); }
+
+  @Post('drafts/submit') @HttpCode(200) @RequirePermissions('mailbox.draft')
+  submit(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.submit(request.auth!, body.id), request.requestId); }
+
+  @Post('email-approvals/decide') @HttpCode(200) @RequirePermissions('mailbox.review')
+  decide(@Body() body: DraftDecisionDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.decide(request.auth!, body), request.requestId); }
+
+  @Post('email-send/run') @HttpCode(200) @RequirePermissions('mailbox.send')
+  send(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.send(request.auth!, body.id), request.requestId); }
+
+  @Post('delivery/list') @HttpCode(200) @RequirePermissions('mailbox.read')
+  deliveries(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.deliveries(request.auth!, body), request.requestId); }
+
+  @Post('delivery/reconcile') @HttpCode(200) @RequirePermissions('mailbox.read')
+  reconcile(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.reconcile(request.auth!, body.id), request.requestId); }
+
+  @Post('inbox-ai/run') @HttpCode(200) @RequirePermissions('mailbox.draft')
+  analyze(@Body() body: AnalyzeDto, @Req() request: AuthenticatedRequest) { return this.ok(this.sendService.analyze(request.auth!, body, request.requestId), request.requestId); }
+
+  private ok<T>(value: Promise<T> | T, requestId: string) {
+    return Promise.resolve(value).then((data) => apiSuccess(data, requestId));
+  }
+}
+
+@Controller('mailbox')
+export class MailboxOauthController {
+  constructor(
+    @Inject(MailboxConnectionService) private readonly connections: MailboxConnectionService,
+    @Inject(MailboxWebhookService) private readonly webhooks: MailboxWebhookService,
+  ) {}
+
+  @Get('oauth/callback')
+  async callback(@Query('state') state: string, @Query('code') code: string | undefined, @Res() response: Response) {
+    const result = await this.connections.completeOauth(state || '', code);
+    response.redirect(result.location);
+  }
+
+  @Post('webhooks/:provider')
+  @HttpCode(200)
+  webhook(@Param('provider') provider: string, @Req() request: RawBodyRequest<Request>, @Headers('x-salesos-signature') signature?: string) {
+    return this.webhooks.receive(provider, request.rawBody?.toString('utf8') ?? '', signature);
+  }
+}

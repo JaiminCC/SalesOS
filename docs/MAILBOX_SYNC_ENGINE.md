@@ -1,0 +1,11 @@
+# Mailbox sync engine
+
+`queueMailboxImport` appends at most 100 messages to `mailbox_sync_cursors.cursor` and then calls `syncMailbox`. Capture cursors keep `pending` and also keep `historyId`, `mode`, and `backfillRemaining` when those fields are already present.
+
+`syncMailbox` claims `crm_work_leases` for kind `mailbox.sync`. A current `RUNNING` lease returns `held`. A `COMPLETED` or expired lease can be claimed again. `CANCELLED` is not reclaimed. Each capture message is written in its own transaction. Unique `(tenant_id, connection_id, provider_message_id)` prevents a second copy.
+
+Google and Microsoft reads use `syncConnection`. It claims kind `mailbox.incremental_sync` and records the lease token, lease version, and `mailbox_connections.revocation_version`. Token refresh and the page read happen outside the database transaction. Before any provider response is stored, the worker checks again that the tenant is active, the connecting user is still eligible, `mailbox.connect` is still granted, the mailbox access row is still at least `READ`, the connection is not disconnected, the revocation version is unchanged, no send scope is present, and the same lease token and version are still current. A disconnect during the HTTP call increments the revocation version, clears the tokens, and rotates the lease. The page that was already downloaded is discarded. A rate limit records `RATE_LIMIT` and does not mark the mailbox `SYNCED` or move the cursor. A profile address that does not match the stored mailbox address records `IDENTITY_MISMATCH` and stores nothing.
+
+The worker accepts `mailbox.sync`, `mailbox.incremental_sync`, and `mailbox.reconcile`. Due read-only connections are scheduled with an hourly job id. Recovery is covered by `apps/worker/src/mailbox-recovery.spec.ts`: SIGKILL during capture import, SIGKILL after a provider lease claim, disconnect, suspension, and permission loss during the provider read, lease replacement, refresh racing with disconnect, duplicate dispatch, and a repeated sync with no duplicate.
+
+Historical provider pages are 10 messages. There is no live send. A capture webhook can store a receipt only when the test hook is enabled. See `docs/MAILBOX_CAPTURE_SECURITY.md`.

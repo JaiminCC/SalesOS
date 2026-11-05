@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createModelClient, generateTaskResult, type JsonSchema } from '@salesos/agent-core';
 import { ContextError, Prisma, advanceAgentRun, decodeEncryptionKey, encryptField, loadPublishedContext, readModelSelection, withTenant } from '@salesos/database';
-import { AGENT_RUN_EVENT, DEFAULT_RUN_LIMITS, buildLeadResearchPlan, buildSupervisorPlan, decide, redactValue, textHasCommercialCommitment, validatePlan } from '@salesos/shared';
+import { AGENT_RUN_EVENT, DEFAULT_RUN_LIMITS, buildInboxPlan, buildLeadResearchPlan, buildSupervisorPlan, decide, redactValue, textHasCommercialCommitment, validatePlan } from '@salesos/shared';
 import { ApiException } from '../common/api.exception';
 import { runBatch } from '../common/batch';
 import { AppConfig } from '../config/app-config';
@@ -101,7 +101,8 @@ export class AgentsService {
 
   async createRun(actor: SessionContext, input: RunCreateDto, requestId: string) {
     const leadResearch = input.planKind === 'LEAD_RESEARCH_AND_QUALIFY';
-    this.require(actor, leadResearch ? 'crm.leads.qualify' : 'agents.manage');
+    const inbox = input.planKind === 'INBOX_ANALYZE_AND_DRAFT';
+    this.require(actor, inbox ? 'mailbox.draft' : leadResearch ? 'crm.leads.qualify' : 'agents.manage');
     const tenantId = this.tenant(actor);
     if (!input.goal?.trim() || !input.productId) throw new ApiException(422, 'MODEL_REQUIRED', 'A goal and a published product are required');
     const created = await withTenant(this.database.prisma, tenantId, async (tx) => {
@@ -120,12 +121,13 @@ export class AgentsService {
         throw error;
       }
       if (leadResearch && !input.leadId) throw new ApiException(422, 'VALIDATION_ERROR', 'A lead is required');
+      if (inbox && !input.threadId) throw new ApiException(422, 'VALIDATION_ERROR', 'A thread is required');
       if (leadResearch && input.leadId) {
         const lead = await tx.crmLead.findUnique({ where: { tenantId_id: { tenantId, id: input.leadId } } });
         if (!lead || lead.archivedAt) throw new ApiException(404, 'NOT_FOUND', 'Lead was not found');
         if (lead.productId && lead.productId !== pinned.context.productId) throw new ApiException(409, 'CONFLICT', 'The lead is pinned to a different product');
       }
-      const plan = leadResearch ? buildLeadResearchPlan() : buildSupervisorPlan(input.goal!.trim());
+      const plan = inbox ? buildInboxPlan() : leadResearch ? buildLeadResearchPlan() : buildSupervisorPlan(input.goal!.trim());
       const invalid = validatePlan(plan);
       if (invalid) throw new ApiException(400, 'INVALID_PLAN', invalid);
       const run = await tx.agentRun.create({
@@ -143,7 +145,7 @@ export class AgentsService {
           contextSnapshot: pinned.context as Prisma.InputJsonValue,
           citations: pinned.context.citations as Prisma.InputJsonValue,
           plan: plan as Prisma.InputJsonValue,
-          constraints: (leadResearch ? { ...DEFAULT_RUN_LIMITS, maxToolCalls: 12 } : DEFAULT_RUN_LIMITS) as Prisma.InputJsonValue,
+          constraints: ((inbox || leadResearch) ? { ...DEFAULT_RUN_LIMITS, maxToolCalls: 12, mailboxThreadId: input.threadId } : DEFAULT_RUN_LIMITS) as Prisma.InputJsonValue,
           createdBy: actor.userId,
           inputRedacted: redactValue({ triggerType: input.triggerType, planKind: input.planKind ?? 'PRODUCT_RESEARCH', agent: agent.name, goal: input.goal }) as Prisma.InputJsonValue,
         },

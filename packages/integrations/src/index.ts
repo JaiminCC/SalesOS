@@ -1,4 +1,8 @@
 export { NotConfiguredError } from './errors';
+export { exchangeOAuthCode, webhookAuthentic, webhookSignature, readGmailPage } from './mailbox';
+export { readProviderPage, refreshOAuthToken } from './provider-read';
+export type { NormalizedMail, ProviderCursor, ProviderReadResult } from './provider-read';
+export type { MailboxPage } from './mailbox';
 export {
   UnconfiguredCalendar,
   UnconfiguredMailbox,
