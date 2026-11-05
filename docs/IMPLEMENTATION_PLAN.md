@@ -352,6 +352,8 @@ Live lists, dedicated add/view/edit pages, and body-based management routes cove
 
 ## Phase 4 — AI Sales Supervisor runtime
 
+Sprint 4 stores agent profiles, runs, steps, actions, policies, and model usage. Live agent, run, and command controls use the Sprint 3.1 management framework. Runs and steps are archived or cancelled. They are not hard-deleted. Leads, mailbox send, and campaigns stay later phases.
+
 ### T4.1 Persist runs, steps, and actions
 
 **Depends on:** T2.4, T1.6.  

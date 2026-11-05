@@ -58,6 +58,7 @@ export function e2eProcessEnv(source: Record<string, string>): Record<string, st
     MAIL_MODE: 'capture',
     SALESOS_QUEUE_PREFIX: 'playwright',
     SALESOS_PROCESS_KNOWLEDGE: 'inline',
+    SALESOS_PROCESS_AGENTS: 'inline',
     SALESOS_EMBEDDING_PROVIDER: 'test',
     SALESOS_STORAGE_ROOT: resolve(repoRoot, '.data/e2e-objects'),
     WEB_ORIGIN: webOrigin,

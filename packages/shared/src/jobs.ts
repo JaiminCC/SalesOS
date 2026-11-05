@@ -28,3 +28,12 @@ export type KnowledgeJobData = {
   documentId: string;
   outboxId: string;
 };
+
+export const AGENT_RUN_JOB = 'agent.run';
+export const AGENT_RUN_EVENT = 'agent.run.requested.v1';
+
+export type AgentRunJobData = {
+  tenantId: string;
+  runId: string;
+  outboxId: string;
+};

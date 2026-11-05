@@ -10,6 +10,7 @@ for (const path of [resolve(process.cwd(), '.env'), resolve(process.cwd(), '../.
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL_WORKER: z.string().min(1),
+  DATA_ENCRYPTION_KEY: z.string().min(1),
   REDIS_URL: z.string().min(1),
   SALESOS_QUEUE_PREFIX: z.string().default(''),
   SALESOS_STORAGE_ROOT: z.string().optional(),

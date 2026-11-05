@@ -22,7 +22,10 @@ Existing `/api/v1/products`, `/api/v1/organizations`, and `/api/v1/auth` routes 
 | Positioning, pricing, objections, qualification, restrictions | LIVE | Inside the open draft | Saved with the draft | Draft snapshot | Draft update with revision | Not a separate delete | None | Not a grid | Not a grid | Not a grid | Not a grid |
 | Organization defaults | LIVE | Single record | Created with the organization | `defaults/get` | `defaults/update` with `expectedUpdatedAt` | None | None | Not a grid | Not a grid | Not a grid | Not a grid |
 | Knowledge documents | LIVE | Product tab and `management/knowledge/list` | Upload | `knowledge/get` | Approval state, retry, reprocess | Delete with retention | Delete and approve | Yes | file name, status, created, updated | File name | Status, file type, created range |
-| Command Center, agents, inspector, leads, campaigns, conversations, qualification, meetings, analytics | SIMULATED | None | None | None | None | None | None | Client only | Client only | Client only | Client only |
+| Command Center | LIVE automation panel | Not a record grid | `runs/create` scan | Current automation status | `automation/pause` and `automation/resume` | Pause and resume. No delete | None | Not a grid | Not a grid | Not a grid | Status |
+| AI Agents | LIVE | `management/agents/list` | `agents/create` | `agents/get` | `agents/update` | Pause, resume, archive. No delete | Pause and archive | Yes | name, status | Name and role | Status |
+| Execution Inspector | LIVE | `management/runs/list` | `runs/create` test or scan | `runs/get` with steps and actions | Cancel, pause, resume, archive, replay | No hard delete of runs, steps, or actions | Cancel and archive | Yes | trigger, state, created | Trigger | State |
+| Leads, campaigns, conversations, qualification, meetings, analytics | SIMULATED | None | None | None | None | None | None | Client only | Client only | Client only | Client only |
 | Preferences, security center page, SSO, integrations, WhatsApp, webhooks | SIMULATED | None | None | None | None | None | None | Client only | Client only | Client only | Client only |
 
 Password reset, sign-in, and email verification stay on the existing auth API. They are not management grids.
@@ -87,14 +90,22 @@ Password reset, sign-in, and email verification stay on the existing auth API. T
 - Download stays on the existing authenticated file route. The document id is not placed in the browser URL.
 - Bulk approve checks `approvals.manage` and approves each selected document on its own. A document the caller cannot approve is a per-record failure.
 
+### Command Center, agents, and inspector
+
+- Data source: LIVE for the signed-in automation panel, agent records, and run inspector. The prototype cards under the automation panel stay labeled as demo data.
+- Add, view, and edit use the shared management layout and a session-bound navigation token. The address bar stays `/workspace/agents` or `/workspace/inspector` with `add`, `view`, or `edit`.
+- Lists use server pagination, allowlisted sort, search, and status or state filters. Missing tokens, empty lists, and API errors render the shared states.
+- Archive, pause, cancel, and bulk actions confirm first. There is no delete control. Database triggers reject `DELETE` on agent profiles, policies, runs, steps, actions, and model usage.
+- A viewer can read. Creating, editing, and archiving require `agents.manage`. Pause and resume require `automation.pause`.
+- Scan and test runs return the stored run state. The test path does not send a message. A paused organization does not call an external sender.
+- Unsigned-in demo mode still renders the original agent and inspector prototypes.
+
 ## Simulated modules
 
-These screens still render prototype data. Sprint 3.1 did not add production CRUD for them.
+These screens still render prototype data. Sprint 4 did not add production CRUD for them.
 
-| Screen | Missing backend | Sprint 3.1 treatment |
+| Screen | Missing backend | Treatment |
 | --- | --- | --- |
-| Command Center | No live pipeline or agent run store | Left simulated |
-| AI Agents and Execution Inspector | No agent runtime | Left simulated |
 | Lead Discovery | No lead table API | Left simulated |
 | Campaigns | No campaign table API | Left simulated |
 | AI Conversations | No conversation store | Left simulated |

@@ -1,9 +1,10 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { createPrismaClient } from '@salesos/database';
-import { FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_JOB, foundationQueueName, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
+import { AGENT_RUN_JOB, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_JOB, foundationQueueName, type AgentRunJobData, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
 import { parseWorkerEnv } from './env';
 import { readWorkerHealth } from './health';
+import { processAgentRunJob } from './agent-job';
 import { processKnowledgeJob, purgeDueKnowledge } from './knowledge';
 import { externalPorts } from './ports';
 import { markFinalFailure, processFoundationPing, publishPendingOutbox } from './processor';
@@ -21,11 +22,12 @@ async function main(): Promise<void> {
   queueConnection.on('error', () => undefined);
   workerConnection.on('error', () => undefined);
   const queueName = foundationQueueName(env.SALESOS_QUEUE_PREFIX);
-  const queue = new Queue<FoundationJobData | KnowledgeJobData>(queueName, { connection: queueConnection });
-  const worker = new Worker<FoundationJobData | KnowledgeJobData>(
+  const queue = new Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData>(queueName, { connection: queueConnection });
+  const worker = new Worker<FoundationJobData | KnowledgeJobData | AgentRunJobData>(
     queueName,
     async (job) => {
       if (job.name === KNOWLEDGE_PROCESS_JOB) return processKnowledgeJob(job as Job<KnowledgeJobData>, prisma);
+      if (job.name === AGENT_RUN_JOB) return processAgentRunJob(job as Job<AgentRunJobData>, prisma, env.DATA_ENCRYPTION_KEY);
       return processFoundationPing(job as Job<FoundationJobData>, prisma);
     },
     { connection: workerConnection, concurrency: 4 },

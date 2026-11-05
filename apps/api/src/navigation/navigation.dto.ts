@@ -11,6 +11,11 @@ export const NAVIGATION_TYPES = [
   'session',
   'role',
   'product_defaults',
+  'agent',
+  'agent_run',
+  'automation_policy',
+  'model_configuration',
+  'agent_approval',
 ] as const;
 
 export class CreateNavigationDto {

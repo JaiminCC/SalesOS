@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTenant } from '@salesos/database';
 import { ApiException } from '../common/api.exception';
+import { AgentsService } from '../agents/agents.service';
 import { IdentityDatabase } from '../identity/identity-database.service';
 import type { SessionContext } from '../identity/identity.service';
 import { ProductsService } from '../products/products.service';
@@ -22,6 +23,11 @@ const READ_PERMISSION: Record<string, string | null> = {
   session: null,
   role: null,
   product_defaults: 'products.read',
+  agent: 'agents.read',
+  agent_run: 'agents.read',
+  automation_policy: 'agents.read',
+  model_configuration: 'agents.read',
+  agent_approval: 'agents.read',
 };
 
 @Injectable()
@@ -29,6 +35,7 @@ export class NavigationService {
   constructor(
     @Inject(IdentityDatabase) private readonly identity: IdentityDatabase,
     @Inject(ProductsService) private readonly products: ProductsService,
+    @Inject(AgentsService) private readonly agents: AgentsService,
   ) {}
 
   async create(actor: SessionContext, input: CreateNavigationDto) {
@@ -155,6 +162,11 @@ export class NavigationService {
     if (input.resourceType === 'session') await this.visibleSession(actor, input.resourceId!);
     if (input.resourceType === 'role') await this.visibleRole(actor, input.resourceKey ?? '');
     if (input.resourceType === 'product_defaults') await this.products.defaults(actor);
+    if (input.resourceType === 'agent') await this.agents.agentRecord(actor, input.resourceId!);
+    if (input.resourceType === 'agent_run') await this.agents.runRecord(actor, input.resourceId!);
+    if (input.resourceType === 'automation_policy') await this.visiblePolicy(actor, input.resourceId!);
+    if (input.resourceType === 'model_configuration') await this.agents.modelRecord(actor, input.resourceId!);
+    if (input.resourceType === 'agent_approval') await this.agents.approvalRecord(actor, input.resourceId!);
   }
 
   private async visibleMember(actor: SessionContext, userId: string): Promise<void> {
@@ -176,6 +188,10 @@ export class NavigationService {
   private async visibleSession(actor: SessionContext, sessionId: string): Promise<void> {
     const row = await this.identity.prisma.session.findFirst({ where: { id: sessionId, userId: actor.userId } });
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Session was not found');
+  }
+
+  private async visiblePolicy(actor: SessionContext, id: string): Promise<void> {
+    await this.agents.policyRecord(actor, id);
   }
 
   private async visibleRole(actor: SessionContext, name: string): Promise<void> {
@@ -200,6 +216,8 @@ function writePermission(resourceType: string, action: string): string | null {
   if (resourceType === 'product' || resourceType === 'product_version' || resourceType === 'icp' || resourceType === 'knowledge_document' || resourceType === 'product_defaults') {
     return 'products.write';
   }
+  if (resourceType === 'agent' || resourceType === 'agent_run' || resourceType === 'automation_policy' || resourceType === 'model_configuration') return 'agents.manage';
+  if (resourceType === 'agent_approval') return 'approvals.manage';
   return 'settings.manage';
 }
 

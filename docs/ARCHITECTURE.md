@@ -317,7 +317,7 @@ Published snapshots are immutable. A database trigger rejects snapshot edits exc
 
 Knowledge bytes live under `SALESOS_STORAGE_ROOT` (default `data/objects`, gitignored), never in `apps/web/public`. API responses omit `storageKey` and filesystem paths. Retrieval for live agent context uses only the published version and documents that are still `APPROVED`. Keyword results are labeled `keyword`. Semantic results require the pinned 384-dimension model. The HTTP embedding provider is refused when `NODE_ENV=test` or `CI=true`.
 
-The reusable context service is `POST /api/v1/products/:id/context/preview`. It is not an LLM agent. Command Center, campaigns, inbox, and WhatsApp stay simulated.
+The reusable context service is `POST /api/v1/products/:id/context/preview`. It is not an LLM agent. Campaigns, inbox, and WhatsApp stay simulated. Signed-in Command Center automation is covered in section 16.
 
 ## 15. Management screens and secure navigation (Sprint 3.1)
 
@@ -327,4 +327,8 @@ The selected record is an opaque navigation context. `POST /api/v1/navigation/co
 
 Item mutations that must not put identifiers in the URL use `POST /api/v1/management/...` with the identifier in the JSON body. The Sprint 2 and Sprint 3 routes under `/api/v1/products`, `/api/v1/organizations`, and `/api/v1/auth` remain. Bulk changes run one record at a time, at most 50 identifiers, and return a result per identifier. Queries inside a tenant transaction run one after another so Prisma does not interleave statements on one transaction client.
 
-Audit events stay append-only. Published product versions stay immutable. Knowledge deletion still follows retention and tombstone rules. Command Center, agents, leads, campaigns, conversations, meetings, analytics, SSO, integrations, WhatsApp, and webhooks stay simulated.
+Audit events stay append-only. Published product versions stay immutable. Knowledge deletion still follows retention and tombstone rules. Leads, campaigns, conversations, meetings, analytics, SSO, integrations, WhatsApp, and webhooks stay simulated.
+
+## 16. Agent management (Sprint 4)
+
+Signed-in Command Center, AI Agents, and Execution Inspector screens use the shared management components. Add, view, and edit pages keep database ids in a session-bound navigation token. Lists paginate, sort, and search on the server. Pause, cancel, and archive confirm first. `agent_runs`, `agent_run_steps`, `agent_actions`, and `llm_usage` reject SQL `DELETE`. Policy checks external sends before any mailbox call. A paused organization does not send. A test run records steps and leaves the outbound outcome `sent: false`.

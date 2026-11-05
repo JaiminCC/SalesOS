@@ -16,6 +16,16 @@ export const TENANT_TABLES = [
   'embedding_indexes',
   'organization_product_defaults',
   'navigation_contexts',
+  'agent_profiles',
+  'automation_policies',
+  'agent_runs',
+  'agent_run_steps',
+  'agent_actions',
+  'llm_usage',
+  'model_configurations',
+  'agent_approvals',
+  'agent_tool_calls',
+  'usage_counters',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

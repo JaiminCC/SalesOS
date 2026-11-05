@@ -16,9 +16,11 @@ model Tenant {
   locale             String    @default("en")
   currency           String    @default("USD") @db.Char(3)
   settings           Json      @default("{}")
-  automationStatus   String    @default("RUNNING") @map("automation_status")
-  automationPausedAt DateTime? @map("automation_paused_at") @db.Timestamptz(6)
-  automationPausedBy String?   @map("automation_paused_by") @db.Uuid
+  automationStatus      String    @default("RUNNING") @map("automation_status")
+  automationPausedAt    DateTime? @map("automation_paused_at") @db.Timestamptz(6)
+  automationPausedBy    String?   @map("automation_paused_by") @db.Uuid
+  llmMonthlyBudgetMinor Int       @default(1000000) @map("llm_monthly_budget_minor")
+  llmProvider           String    @default("fake") @map("llm_provider")
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   memberships              Membership[]
@@ -36,6 +38,16 @@ model Tenant {
   embeddingIndex           EmbeddingIndex?
   productDefaults          OrganizationProductDefault?
   navigationContexts       NavigationContext[]
+  agentProfiles            AgentProfile[]
+  automationPolicies       AutomationPolicy[]
+  agentRuns                AgentRun[]
+  agentRunSteps            AgentRunStep[]
+  agentActions             AgentAction[]
+  llmUsage                 LlmUsage[]
+  modelConfigurations      ModelConfiguration[]
+  agentApprovals           AgentApproval[]
+  agentToolCalls           AgentToolCall[]
+  usageCounters            UsageCounter[]
 
   @@map("tenants")
 }
@@ -459,4 +471,252 @@ model NavigationContext {
   @@id([tenantId, id])
   @@index([sessionId, revokedAt])
   @@map("navigation_contexts")
+}
+
+model AgentProfile {
+  tenantId     String    @map("tenant_id") @db.Uuid
+  id           String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  role         String
+  instructions String    @default("")
+  status       String    @default("ACTIVE")
+  enabled              Boolean   @default(true)
+  modelConfigurationId String?   @map("model_configuration_id") @db.Uuid
+  defaultProductId     String?   @map("default_product_id") @db.Uuid
+  createdBy            String    @map("created_by") @db.Uuid
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs         AgentRun[]
+
+  @@id([tenantId, id])
+  @@index([tenantId, status, createdAt])
+  @@map("agent_profiles")
+}
+
+model AutomationPolicy {
+  tenantId       String    @map("tenant_id") @db.Uuid
+  id             String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String
+  status         String    @default("ACTIVE")
+  autonomyLevel  String    @default("A4") @map("autonomy_level")
+  channel        String?
+  actionType     String?   @map("action_type")
+  constraints    Json      @default("{}")
+  version        Int       @default(1)
+  effectiveAt    DateTime  @default(now()) @map("effective_at") @db.Timestamptz(6)
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@map("automation_policies")
+}
+
+model AgentRun {
+  tenantId         String    @map("tenant_id") @db.Uuid
+  id               String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId          String?   @map("agent_id") @db.Uuid
+  triggerType      String    @map("trigger_type")
+  sourceEventId    String?   @map("source_event_id")
+  state            String    @default("QUEUED")
+  modelProvider    String?   @map("model_provider")
+  modelName        String?   @map("model_name")
+  promptVersion    String?   @map("prompt_version")
+  inputRedacted    Json      @default("{}") @map("input_redacted")
+  startedAt        DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz(6)
+  errorCode        String?   @map("error_code")
+  parentRunId      String?   @map("parent_run_id") @db.Uuid
+  productId              String?   @map("product_id") @db.Uuid
+  productVersionId       String?   @map("product_version_id") @db.Uuid
+  goal                   String    @default("")
+  modelConfigurationId   String?   @map("model_configuration_id") @db.Uuid
+  contextSha256          String?   @map("context_sha256")
+  contextSnapshot        Json      @default("{}") @map("context_snapshot")
+  citations              Json      @default("[]")
+  plan                   Json      @default("[]")
+  report                 Json?
+  constraints            Json      @default("{}")
+  leaseToken             String?   @map("lease_token")
+  leaseUntil             DateTime? @map("lease_until") @db.Timestamptz(6)
+  leaseVersion           Int       @default(0) @map("lease_version")
+  archivedAt             DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy        String    @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent            AgentProfile? @relation(fields: [tenantId, agentId], references: [tenantId, id])
+  parent           AgentRun? @relation("RunReplay", fields: [tenantId, parentRunId], references: [tenantId, id])
+  replays          AgentRun[] @relation("RunReplay")
+  steps            AgentRunStep[]
+  actions          AgentAction[]
+  usage            LlmUsage[]
+  approvals        AgentApproval[]
+  toolCalls        AgentToolCall[]
+
+  @@id([tenantId, id])
+  @@index([tenantId, state, createdAt])
+  @@map("agent_runs")
+}
+
+model AgentRunStep {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId          String   @map("run_id") @db.Uuid
+  position       Int
+  name           String
+  status         String
+  detailRedacted Json     @default("{}") @map("detail_redacted")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run            AgentRun @relation(fields: [tenantId, runId], references: [tenantId, id])
+
+  @@id([tenantId, id])
+  @@unique([tenantId, runId, position])
+  @@map("agent_run_steps")
+}
+
+model AgentAction {
+  tenantId               String    @map("tenant_id") @db.Uuid
+  id                     String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId                  String    @map("run_id") @db.Uuid
+  actionType             String    @map("action_type")
+  targetType             String    @map("target_type")
+  targetId               String?   @map("target_id") @db.Uuid
+  riskLevel              String    @default("LOW") @map("risk_level")
+  policyVersion          String?   @map("policy_version")
+  policyDecision         String?   @map("policy_decision")
+  state                  String    @default("PROPOSED")
+  requiresHumanApproval  Boolean   @default(true) @map("requires_human_approval")
+  approvedBy             String?   @map("approved_by") @db.Uuid
+  dueAt                  DateTime? @map("due_at") @db.Timestamptz(6)
+  attempts               Int       @default(0)
+  idempotencyKey         String    @map("idempotency_key")
+  payload                Json      @default("{}")
+  outcome                Json?
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run                    AgentRun  @relation(fields: [tenantId, runId], references: [tenantId, id])
+  approvals              AgentApproval[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, state, dueAt])
+  @@map("agent_actions")
+}
+
+model LlmUsage {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId        String   @map("run_id") @db.Uuid
+  provider     String
+  model        String
+  inputTokens  Int      @map("input_tokens")
+  outputTokens Int      @map("output_tokens")
+  costMinor     Int      @default(0) @map("cost_minor")
+  currency      String   @default("USD") @db.Char(3)
+  usageSource   String   @default("estimated") @map("usage_source")
+  traceId       String?  @map("trace_id")
+  durationMs    Int?     @map("duration_ms")
+  requestStatus String?  @map("request_status")
+  retryCount    Int      @default(0) @map("retry_count")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run          AgentRun @relation(fields: [tenantId, runId], references: [tenantId, id])
+
+  @@id([tenantId, id])
+  @@index([tenantId, createdAt])
+  @@map("llm_usage")
+}
+
+model ModelConfiguration {
+  tenantId                    String   @map("tenant_id") @db.Uuid
+  id                          String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                        String
+  provider                    String
+  model                       String
+  baseUrl                     String?  @map("base_url")
+  authMethod                  String   @default("none") @map("auth_method")
+  credentialCiphertext        Bytes?   @map("credential_ciphertext")
+  credentialHint              String?  @map("credential_hint")
+  timeoutMs                   Int      @default(10000) @map("timeout_ms")
+  maxRetries                  Int      @default(1) @map("max_retries")
+  maxInputTokens              Int      @default(6000) @map("max_input_tokens")
+  maxOutputTokens             Int      @default(800) @map("max_output_tokens")
+  temperature                 Decimal  @default(0) @db.Decimal(3, 2)
+  inputPriceMinorPerMillion   Int      @default(0) @map("input_price_minor_per_million")
+  outputPriceMinorPerMillion  Int      @default(0) @map("output_price_minor_per_million")
+  currency                    String   @default("USD") @db.Char(3)
+  enabled                     Boolean  @default(true)
+  isDefault                   Boolean  @default(false) @map("is_default")
+  allowPrivateHttp            Boolean  @default(false) @map("allow_private_http")
+  createdBy                   String   @map("created_by") @db.Uuid
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant                      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@map("model_configurations")
+}
+
+model AgentApproval {
+  tenantId      String    @map("tenant_id") @db.Uuid
+  id            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId         String    @map("run_id") @db.Uuid
+  actionId      String    @map("action_id") @db.Uuid
+  payloadSha256 String    @map("payload_sha256")
+  actionType    String    @map("action_type")
+  riskLevel     String    @map("risk_level")
+  requestedBy   String    @map("requested_by") @db.Uuid
+  requestedAt   DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  decidedBy     String?   @map("decided_by") @db.Uuid
+  decision      String    @default("PENDING")
+  decidedAt     DateTime? @map("decided_at") @db.Timestamptz(6)
+  comment       String?
+  policyVersion String?   @map("policy_version")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run           AgentRun  @relation(fields: [tenantId, runId], references: [tenantId, id])
+  action        AgentAction @relation(fields: [tenantId, actionId], references: [tenantId, id])
+
+  @@id([tenantId, id])
+  @@map("agent_approvals")
+}
+
+model AgentToolCall {
+  tenantId        String    @map("tenant_id") @db.Uuid
+  id              String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId           String    @map("run_id") @db.Uuid
+  toolName        String    @map("tool_name")
+  toolVersion     String    @map("tool_version")
+  idempotencyKey  String    @map("idempotency_key")
+  status          String
+  inputRedacted   Json      @default("{}") @map("input_redacted")
+  outputRedacted  Json?     @map("output_redacted")
+  attempts        Int       @default(0)
+  startedAt       DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run             AgentRun  @relation(fields: [tenantId, runId], references: [tenantId, id])
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@map("agent_tool_calls")
+}
+
+model UsageCounter {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  periodStart   DateTime @map("period_start") @db.Date
+  reservedMinor Int      @default(0) @map("reserved_minor")
+  spentMinor    Int      @default(0) @map("spent_minor")
+  activeRuns    Int      @default(0) @map("active_runs")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, periodStart])
+  @@map("usage_counters")
 }

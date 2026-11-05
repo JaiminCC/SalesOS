@@ -15,6 +15,7 @@ const schema = z.object({
   SALESOS_STORAGE_ROOT: z.string().optional(),
   SALESOS_KNOWLEDGE_MAX_BYTES: z.coerce.number().int().positive().max(20_000_000).default(5_242_880),
   SALESOS_PROCESS_KNOWLEDGE: z.enum(['queue', 'inline']).default('queue'),
+  SALESOS_PROCESS_AGENTS: z.enum(['queue', 'inline']).default('queue'),
   SALESOS_EMBEDDING_PROVIDER: z.enum(['disabled', 'test', 'http']).default('disabled'),
   SALESOS_EMBEDDING_URL: z.string().optional(),
   SALESOS_EMBEDDING_MODEL: z.string().default('configured-embedding'),
