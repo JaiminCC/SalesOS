@@ -1,6 +1,6 @@
 import { Queue, UnrecoverableError, type Job } from 'bullmq';
-import { Prisma, withTenant, type PrismaClient } from '@salesos/database';
-import { AGENT_RUN_EVENT, AGENT_RUN_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, foundationJobId, type AgentRunJobData, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
+import { Prisma, decodeEncryptionKey, importCrmBatch, qualifyCrmLead, runCrmDiscovery, withTenant, type PrismaClient } from '@salesos/database';
+import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, foundationJobId, type AgentRunJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
 
 type PendingOutbox = {
   tenant_id: string;
@@ -14,7 +14,7 @@ export async function listPendingOutbox(prisma: PrismaClient): Promise<PendingOu
   return prisma.$queryRaw<PendingOutbox[]>(Prisma.sql`SELECT * FROM public.list_pending_outbox(25)`);
 }
 
-export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData>): Promise<number> {
+export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData>): Promise<number> {
   const pending = await listPendingOutbox(prisma);
   let published = 0;
   for (const row of pending) {
@@ -30,6 +30,10 @@ export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<Fo
       } else if (row.event_type === AGENT_RUN_EVENT) {
         const data: AgentRunJobData = { tenantId: row.tenant_id, runId: row.aggregate_id, outboxId: row.id };
         await queue.add(AGENT_RUN_JOB, data, options);
+      } else if (row.event_type === CRM_IMPORT_EVENT || row.event_type === CRM_DISCOVERY_EVENT || row.event_type === CRM_QUALIFY_EVENT) {
+        const data: CrmJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
+        const name = row.event_type === CRM_IMPORT_EVENT ? CRM_IMPORT_JOB : row.event_type === CRM_DISCOVERY_EVENT ? CRM_DISCOVERY_JOB : CRM_QUALIFY_JOB;
+        await queue.add(name, data, options);
       } else {
         continue;
       }
@@ -79,7 +83,30 @@ export async function processFoundationPing(job: Job<FoundationJobData>, prisma:
   });
 }
 
-export async function markFinalFailure(job: Job<FoundationJobData | KnowledgeJobData | AgentRunJobData>, prisma: PrismaClient): Promise<void> {
+export async function processCrmJob(job: Job<CrmJobData>, prisma: PrismaClient, encryptionKey: string): Promise<{ done: true }> {
+  const { tenantId, recordId, outboxId } = job.data;
+  const key = decodeEncryptionKey(encryptionKey);
+  if (job.name === CRM_IMPORT_JOB) {
+    const batch = await withTenant(prisma, tenantId, (tx) => tx.crmImportBatch.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
+    if (!batch) throw new UnrecoverableError('import batch is missing');
+    const outcome = await importCrmBatch(prisma, { tenantId, userId: batch.createdBy, key }, recordId);
+    if (outcome.held) throw new Error('LEASE_HELD');
+  } else if (job.name === CRM_DISCOVERY_JOB) {
+    const discovery = await withTenant(prisma, tenantId, (tx) => tx.crmDiscoveryJob.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
+    if (!discovery) throw new UnrecoverableError('discovery job is missing');
+    const outcome = await runCrmDiscovery(prisma, { tenantId, userId: discovery.createdBy, key }, recordId);
+    if (outcome.held) throw new Error('LEASE_HELD');
+  } else if (job.name === CRM_QUALIFY_JOB) {
+    const lead = await withTenant(prisma, tenantId, (tx) => tx.crmLead.findUnique({ where: { tenantId_id: { tenantId, id: recordId } } }));
+    if (!lead) throw new UnrecoverableError('lead is missing');
+    const outcome = await qualifyCrmLead(prisma, { tenantId, userId: lead.createdBy, key, runId: outboxId }, recordId);
+    if (outcome.held) throw new Error('LEASE_HELD');
+  } else throw new UnrecoverableError('unexpected job name');
+  await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.updateMany({ where: { tenantId, id: outboxId, status: 'PENDING' }, data: { status: 'PROCESSED', processedAt: new Date() } }));
+  return { done: true };
+}
+
+export async function markFinalFailure(job: Job<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData>, prisma: PrismaClient): Promise<void> {
   const max = job.opts.attempts ?? 1;
   if (job.attemptsMade < max) return;
   if (job.name === FOUNDATION_PING_JOB && 'jobExecutionId' in job.data) {

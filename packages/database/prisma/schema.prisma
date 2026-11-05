@@ -48,6 +48,15 @@ model Tenant {
   agentApprovals           AgentApproval[]
   agentToolCalls           AgentToolCall[]
   usageCounters            UsageCounter[]
+  crmAccounts              CrmAccount[]
+  crmContacts              CrmContact[]
+  crmLeads                 CrmLead[]
+  crmImportBatches         CrmImportBatch[]
+  crmSuppressions          CrmSuppression[]
+  crmDiscoverySources      CrmDiscoverySource[]
+  crmDiscoveryJobs         CrmDiscoveryJob[]
+  crmContactPolicy         CrmContactPolicy?
+  crmWorkLeases            CrmWorkLease[]
 
   @@map("tenants")
 }
@@ -543,6 +552,7 @@ model AgentRun {
   leaseToken             String?   @map("lease_token")
   leaseUntil             DateTime? @map("lease_until") @db.Timestamptz(6)
   leaseVersion           Int       @default(0) @map("lease_version")
+  leadId                 String?   @map("lead_id") @db.Uuid
   archivedAt             DateTime? @map("archived_at") @db.Timestamptz(6)
   createdBy        String    @map("created_by") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -719,4 +729,402 @@ model UsageCounter {
 
   @@id([tenantId, periodStart])
   @@map("usage_counters")
+}
+
+model CrmAccount {
+  tenantId           String    @map("tenant_id") @db.Uuid
+  id                 String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legalName          String    @map("legal_name")
+  displayName        String    @map("display_name")
+  website            String?
+  domain             String?
+  industry           String?
+  subindustry        String?
+  businessModel      String?   @map("business_model")
+  description        String?
+  sizeRange          String?   @map("size_range")
+  employeeEstimate   Int?      @map("employee_estimate")
+  employeeStatus     String    @default("UNKNOWN") @map("employee_status")
+  revenueRange       String?   @map("revenue_range")
+  revenueStatus      String    @default("UNKNOWN") @map("revenue_status")
+  country            String?
+  region             String?
+  locations          Json      @default("[]")
+  technologies       Json      @default("[]")
+  signals            Json      @default("[]")
+  source             String    @default("manual")
+  verificationStatus String    @default("UNKNOWN") @map("verification_status")
+  ownerUserId        String?   @map("owner_user_id") @db.Uuid
+  lifecycleStatus    String    @default("ACTIVE") @map("lifecycle_status")
+  custom             Json      @default("{}")
+  revision           Int       @default(1)
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy          String    @map("created_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts           CrmContact[]
+  leads              CrmLead[]
+
+  @@id([tenantId, id])
+  @@index([tenantId, displayName])
+  @@map("crm_accounts")
+}
+
+model CrmContact {
+  tenantId           String    @map("tenant_id") @db.Uuid
+  id                 String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId          String?   @map("account_id") @db.Uuid
+  name               String
+  jobTitle           String?   @map("job_title")
+  department         String?
+  seniority          String?
+  emailCiphertext    Bytes?    @map("email_ciphertext")
+  emailHmac          String?   @map("email_hmac")
+  emailHint          String?   @map("email_hint")
+  phoneCiphertext    Bytes?    @map("phone_ciphertext")
+  phoneHmac          String?   @map("phone_hmac")
+  phoneHint          String?   @map("phone_hint")
+  profileUrl         String?   @map("profile_url")
+  country            String?
+  timezone           String?
+  contactRole        String?   @map("contact_role")
+  decisionClass      String    @default("UNKNOWN") @map("decision_class")
+  verificationStatus String    @default("UNKNOWN") @map("verification_status")
+  source             String    @default("manual")
+  provenance         Json      @default("{}")
+  consentState       String    @default("UNKNOWN") @map("consent_state")
+  ownerUserId        String?   @map("owner_user_id") @db.Uuid
+  revision           Int       @default(1)
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy          String    @map("created_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account            CrmAccount? @relation(fields: [tenantId, accountId], references: [tenantId, id])
+  leads              CrmLead[]
+
+  @@id([tenantId, id])
+  @@index([tenantId, name])
+  @@map("crm_contacts")
+}
+
+model CrmLead {
+  tenantId           String    @map("tenant_id") @db.Uuid
+  id                 String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId          String    @map("account_id") @db.Uuid
+  contactId          String?   @map("contact_id") @db.Uuid
+  productId          String?   @map("product_id") @db.Uuid
+  productVersionId   String?   @map("product_version_id") @db.Uuid
+  icpName            String?   @map("icp_name")
+  sourceType         String    @map("source_type")
+  sourceRef          String?   @map("source_ref")
+  score              Int?
+  grade              String    @default("UNRATED")
+  confidence         Decimal   @default(0) @db.Decimal(3, 2)
+  stage              String    @default("NEW")
+  ownerUserId        String?   @map("owner_user_id") @db.Uuid
+  eligibilityState   String    @default("CONSENT_UNKNOWN") @map("eligibility_state")
+  suppressionState   String    @default("CLEAR") @map("suppression_state")
+  lastResearchedAt   DateTime? @map("last_researched_at") @db.Timestamptz(6)
+  nextReviewAt       DateTime? @map("next_review_at") @db.Timestamptz(6)
+  revision           Int       @default(1)
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy          String    @map("created_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account            CrmAccount @relation(fields: [tenantId, accountId], references: [tenantId, id])
+  contact            CrmContact? @relation(fields: [tenantId, contactId], references: [tenantId, id])
+  qualifications     CrmQualification[]
+
+  @@id([tenantId, id])
+  @@index([tenantId, stage, createdAt])
+  @@map("crm_leads")
+}
+
+model CrmLeadContact {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  leadId       String   @map("lead_id") @db.Uuid
+  contactId    String   @map("contact_id") @db.Uuid
+  relationship String   @default("RELATED")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, leadId, contactId])
+  @@map("crm_lead_contacts")
+}
+
+model CrmStageHistory {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  id        String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId    String   @map("lead_id") @db.Uuid
+  fromStage String?  @map("from_stage")
+  toStage   String   @map("to_stage")
+  reason    String?
+  actorId   String   @map("actor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("crm_stage_history")
+}
+
+model CrmActivity {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  id        String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId    String?  @map("lead_id") @db.Uuid
+  accountId String?  @map("account_id") @db.Uuid
+  kind      String
+  summary   String
+  actorId   String   @map("actor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("crm_activities")
+}
+
+model CrmAssignment {
+  tenantId     String    @map("tenant_id") @db.Uuid
+  id           String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subjectType  String    @map("subject_type")
+  subjectId    String    @map("subject_id") @db.Uuid
+  ownerUserId  String?   @map("owner_user_id") @db.Uuid
+  reason       String?
+  startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz(6)
+  actorId      String    @map("actor_id") @db.Uuid
+
+  @@id([tenantId, id])
+  @@map("crm_assignments")
+}
+
+model CrmTakeover {
+  tenantId    String    @map("tenant_id") @db.Uuid
+  id          String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subjectType String    @map("subject_type")
+  subjectId   String    @map("subject_id") @db.Uuid
+  active      Boolean   @default(true)
+  reason      String
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt     DateTime? @map("ended_at") @db.Timestamptz(6)
+  actorId     String    @map("actor_id") @db.Uuid
+
+  @@id([tenantId, id])
+  @@map("crm_takeovers")
+}
+
+model CrmEvidence {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  id         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId     String?  @map("lead_id") @db.Uuid
+  accountId  String?  @map("account_id") @db.Uuid
+  claim      String
+  provenance String
+  sourceRef  String?  @map("source_ref")
+  excerpt    String?
+  createdBy  String   @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("crm_evidence")
+}
+
+model CrmQualification {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId           String   @map("lead_id") @db.Uuid
+  productVersionId String?  @map("product_version_id") @db.Uuid
+  icpName          String?  @map("icp_name")
+  scoringVersion   String   @map("scoring_version")
+  score            Int
+  grade            String
+  confidence       Decimal  @db.Decimal(3, 2)
+  dimensions       Json
+  weights          Json
+  explanation      String?
+  modelProvider    String?  @map("model_provider")
+  modelName        String?  @map("model_name")
+  runId            String?  @map("run_id") @db.Uuid
+  overridden       Boolean  @default(false)
+  overrideReason   String?  @map("override_reason")
+  createdBy        String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lead             CrmLead  @relation(fields: [tenantId, leadId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@map("crm_qualifications")
+}
+
+model CrmImportBatch {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status         String
+  fileName       String   @map("file_name")
+  mapping        Json     @default("{}")
+  policy         String   @default("skip")
+  rowCount       Int      @default(0) @map("row_count")
+  errorCount     Int      @default(0) @map("error_count")
+  storageKey     String?  @map("storage_key")
+  idempotencyKey String   @map("idempotency_key")
+  revision       Int      @default(1)
+  createdBy      String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rows           CrmImportRow[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@map("crm_import_batches")
+}
+
+model CrmImportRow {
+  tenantId   String  @map("tenant_id") @db.Uuid
+  id         String  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId    String  @map("batch_id") @db.Uuid
+  rowNumber  Int     @map("row_number")
+  status     String
+  payload    Json
+  error      String?
+  accountId  String? @map("account_id") @db.Uuid
+  batch      CrmImportBatch @relation(fields: [tenantId, batchId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, batchId, rowNumber])
+  @@map("crm_import_rows")
+}
+
+model CrmDuplicateCandidate {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leftAccountId  String   @map("left_account_id") @db.Uuid
+  rightAccountId String   @map("right_account_id") @db.Uuid
+  confidence     Decimal  @db.Decimal(3, 2)
+  reason         String
+  status         String   @default("OPEN")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("crm_duplicate_candidates")
+}
+
+model CrmSuppression {
+  tenantId    String    @map("tenant_id") @db.Uuid
+  id          String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scope       String
+  subjectHmac String?   @map("subject_hmac")
+  subjectHint String?   @map("subject_hint")
+  accountId   String?   @map("account_id") @db.Uuid
+  contactId   String?   @map("contact_id") @db.Uuid
+  channel     String?
+  purpose     String?
+  reason      String
+  active      Boolean   @default(true)
+  createdBy   String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  removedAt   DateTime? @map("removed_at") @db.Timestamptz(6)
+  removedBy   String?   @map("removed_by") @db.Uuid
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@map("crm_suppressions")
+}
+
+model CrmEligibility {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId        String?  @map("lead_id") @db.Uuid
+  contactId     String?  @map("contact_id") @db.Uuid
+  state         String
+  reasons       Json
+  facts         Json
+  policyVersion String   @map("policy_version")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("crm_eligibility")
+}
+
+model CrmDiscoverySource {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  id         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId String   @map("provider_id")
+  label      String
+  mode       String
+  live       Boolean  @default(false)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, providerId])
+  @@map("crm_discovery_sources")
+}
+
+model CrmDiscoveryJob {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId     String?  @map("product_id") @db.Uuid
+  icpName       String?  @map("icp_name")
+  providerId    String   @map("provider_id")
+  status        String
+  criteria      Json     @default("{}")
+  maxCandidates Int      @default(25) @map("max_candidates")
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidates    CrmDiscoveryCandidate[]
+
+  @@id([tenantId, id])
+  @@map("crm_discovery_jobs")
+}
+
+model CrmWorkLease {
+  tenantId     String    @map("tenant_id") @db.Uuid
+  kind         String
+  recordId     String    @map("record_id") @db.Uuid
+  leaseToken   String?   @map("lease_token")
+  leaseUntil   DateTime? @map("lease_until") @db.Timestamptz(6)
+  leaseVersion Int       @default(0) @map("lease_version")
+  status       String    @default("OPEN")
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, kind, recordId])
+  @@map("crm_work_leases")
+}
+
+model CrmDiscoveryCandidate {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jobId        String   @map("job_id") @db.Uuid
+  name         String
+  domain       String?
+  industry     String?
+  country      String?
+  providerId   String   @map("provider_id")
+  providerMode String   @map("provider_mode")
+  live         Boolean  @default(false)
+  status       String   @default("CANDIDATE")
+  accountId    String?  @map("account_id") @db.Uuid
+  evidence     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  job          CrmDiscoveryJob @relation(fields: [tenantId, jobId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@map("crm_discovery_candidates")
+}
+
+model CrmContactPolicy {
+  tenantId             String   @id @map("tenant_id") @db.Uuid
+  timezone             String?
+  weekdays             Json     @default("[1,2,3,4,5]")
+  startMinute          Int      @default(540) @map("start_minute")
+  endMinute            Int      @default(1020) @map("end_minute")
+  holidays             Json     @default("[]")
+  minimumIntervalHours Int      @default(24) @map("minimum_interval_hours")
+  maxAttempts          Int      @default(3) @map("max_attempts")
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("crm_contact_policies")
 }

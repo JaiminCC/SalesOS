@@ -17,6 +17,8 @@ export type PolicyContext = {
   killSwitch: boolean;
   /** False when no lead or conversation record has established suppression or ownership. */
   audienceKnown?: boolean;
+  eligibility?: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'SUPPRESSED' | 'HUMAN_OWNED' | 'CONSENT_UNKNOWN' | 'REVIEW_REQUIRED' | 'CONTACT_DETAILS_UNVERIFIED' | 'UNKNOWN';
+  quietHours?: 'ALLOW' | 'BLOCK' | 'REQUIRE_APPROVAL' | 'UNKNOWN';
 };
 
 export type PolicyResult = {
@@ -41,6 +43,14 @@ export function decide(action: PolicyAction, context: PolicyContext, policyVersi
   if (context.killSwitch && action.external) {
     return { decision: 'BLOCK', reason: 'KILL_SWITCH', policyVersion };
   }
+  if (action.external && context.eligibility && context.eligibility !== 'ELIGIBLE') {
+    if (context.eligibility === 'SUPPRESSED') return { decision: 'BLOCK', reason: 'OPT_OUT', policyVersion };
+    if (context.eligibility === 'HUMAN_OWNED') return { decision: 'BLOCK', reason: 'HUMAN_OWNED', policyVersion };
+    if (context.eligibility === 'UNKNOWN' || context.eligibility === 'CONSENT_UNKNOWN') return { decision: 'REQUIRE_APPROVAL', reason: 'UNKNOWN_AUDIENCE', policyVersion };
+    return { decision: 'REQUIRE_APPROVAL', reason: 'CONTACT_RESTRICTED', policyVersion };
+  }
+  if (action.external && context.quietHours === 'BLOCK') return { decision: 'BLOCK', reason: 'QUIET_HOURS', policyVersion };
+  if (action.external && context.quietHours === 'UNKNOWN') return { decision: 'REQUIRE_APPROVAL', reason: 'QUIET_HOURS_UNKNOWN', policyVersion };
   if (action.commercialCommitment) {
     return { decision: 'REQUIRE_APPROVAL', reason: 'COMMERCIAL_COMMITMENT', policyVersion };
   }

@@ -16,6 +16,14 @@ export const NAVIGATION_TYPES = [
   'automation_policy',
   'model_configuration',
   'agent_approval',
+  'crm_account',
+  'crm_contact',
+  'crm_lead',
+  'crm_import',
+  'crm_discovery',
+  'crm_suppression',
+  'crm_duplicate',
+  'crm_policy',
 ] as const;
 
 export class CreateNavigationDto {

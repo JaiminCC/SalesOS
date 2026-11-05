@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { createModelClient } from '@salesos/agent-core';
+import { createModelClient, generateTaskResult, type JsonSchema } from '@salesos/agent-core';
 import { ContextError, Prisma, advanceAgentRun, decodeEncryptionKey, encryptField, loadPublishedContext, readModelSelection, withTenant } from '@salesos/database';
-import { AGENT_RUN_EVENT, DEFAULT_RUN_LIMITS, buildSupervisorPlan, decide, redactValue, textHasCommercialCommitment, validatePlan } from '@salesos/shared';
+import { AGENT_RUN_EVENT, DEFAULT_RUN_LIMITS, buildLeadResearchPlan, buildSupervisorPlan, decide, redactValue, textHasCommercialCommitment, validatePlan } from '@salesos/shared';
 import { ApiException } from '../common/api.exception';
 import { runBatch } from '../common/batch';
 import { AppConfig } from '../config/app-config';
@@ -100,7 +100,8 @@ export class AgentsService {
   }
 
   async createRun(actor: SessionContext, input: RunCreateDto, requestId: string) {
-    this.require(actor, 'agents.manage');
+    const leadResearch = input.planKind === 'LEAD_RESEARCH_AND_QUALIFY';
+    this.require(actor, leadResearch ? 'crm.leads.qualify' : 'agents.manage');
     const tenantId = this.tenant(actor);
     if (!input.goal?.trim() || !input.productId) throw new ApiException(422, 'MODEL_REQUIRED', 'A goal and a published product are required');
     const created = await withTenant(this.database.prisma, tenantId, async (tx) => {
@@ -118,7 +119,13 @@ export class AgentsService {
         if (error instanceof ContextError) throw new ApiException(error.status, error.status === 409 ? 'VERSION_NOT_PUBLISHED' : 'NOT_FOUND', error.message);
         throw error;
       }
-      const plan = buildSupervisorPlan(input.goal!.trim());
+      if (leadResearch && !input.leadId) throw new ApiException(422, 'VALIDATION_ERROR', 'A lead is required');
+      if (leadResearch && input.leadId) {
+        const lead = await tx.crmLead.findUnique({ where: { tenantId_id: { tenantId, id: input.leadId } } });
+        if (!lead || lead.archivedAt) throw new ApiException(404, 'NOT_FOUND', 'Lead was not found');
+        if (lead.productId && lead.productId !== pinned.context.productId) throw new ApiException(409, 'CONFLICT', 'The lead is pinned to a different product');
+      }
+      const plan = leadResearch ? buildLeadResearchPlan() : buildSupervisorPlan(input.goal!.trim());
       const invalid = validatePlan(plan);
       if (invalid) throw new ApiException(400, 'INVALID_PLAN', invalid);
       const run = await tx.agentRun.create({
@@ -130,14 +137,15 @@ export class AgentsService {
           goal: input.goal!.trim(),
           productId: pinned.context.productId,
           productVersionId: pinned.context.versionId,
+          leadId: leadResearch ? input.leadId : null,
           modelConfigurationId: model.id,
           contextSha256: pinned.sha256,
           contextSnapshot: pinned.context as Prisma.InputJsonValue,
           citations: pinned.context.citations as Prisma.InputJsonValue,
           plan: plan as Prisma.InputJsonValue,
-          constraints: DEFAULT_RUN_LIMITS as Prisma.InputJsonValue,
+          constraints: (leadResearch ? { ...DEFAULT_RUN_LIMITS, maxToolCalls: 12 } : DEFAULT_RUN_LIMITS) as Prisma.InputJsonValue,
           createdBy: actor.userId,
-          inputRedacted: redactValue({ triggerType: input.triggerType, agent: agent.name, goal: input.goal }) as Prisma.InputJsonValue,
+          inputRedacted: redactValue({ triggerType: input.triggerType, planKind: input.planKind ?? 'PRODUCT_RESEARCH', agent: agent.name, goal: input.goal }) as Prisma.InputJsonValue,
         },
       });
       const outbox = await tx.outboxEvent.create({
@@ -566,12 +574,12 @@ export class AgentsService {
     await advanceAgentRun(this.database.prisma, tenantId, runId, {
       outboxId,
       complete: async (input) => {
-        const generated = await client.generateStructured<Record<string, unknown>>({
+        const generated = await generateTaskResult(client, {
           tenantId,
           task: input.task,
           promptVersion: 'mvp-1',
           messages: input.messages,
-          outputSchema: {
+          outputSchema: (input.outputSchema as JsonSchema | undefined) ?? {
             type: 'object',
             required: ['summary', 'strategy', 'draft'],
             properties: {

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTenant } from '@salesos/database';
 import { ApiException } from '../common/api.exception';
+import { DatabaseService } from '../database/database.service';
 import { AgentsService } from '../agents/agents.service';
 import { IdentityDatabase } from '../identity/identity-database.service';
 import type { SessionContext } from '../identity/identity.service';
@@ -28,6 +29,14 @@ const READ_PERMISSION: Record<string, string | null> = {
   automation_policy: 'agents.read',
   model_configuration: 'agents.read',
   agent_approval: 'agents.read',
+  crm_account: 'crm.accounts.read',
+  crm_contact: 'crm.contacts.read',
+  crm_lead: 'crm.leads.read',
+  crm_import: 'crm.leads.import',
+  crm_discovery: 'crm.leads.discover',
+  crm_suppression: 'crm.suppression.read',
+  crm_duplicate: 'crm.leads.read',
+  crm_policy: 'crm.leads.read',
 };
 
 @Injectable()
@@ -36,6 +45,7 @@ export class NavigationService {
     @Inject(IdentityDatabase) private readonly identity: IdentityDatabase,
     @Inject(ProductsService) private readonly products: ProductsService,
     @Inject(AgentsService) private readonly agents: AgentsService,
+    @Inject(DatabaseService) private readonly database: DatabaseService,
   ) {}
 
   async create(actor: SessionContext, input: CreateNavigationDto) {
@@ -135,7 +145,7 @@ export class NavigationService {
       }
       return;
     }
-    if (!input.resourceId && input.resourceType !== 'product_defaults' && input.resourceType !== 'role') {
+    if (!input.resourceId && input.resourceType !== 'product_defaults' && input.resourceType !== 'role' && input.resourceType !== 'crm_policy') {
       throw new ApiException(400, 'VALIDATION_ERROR', 'A record is required');
     }
     if (input.resourceType === 'product') await this.products.get(actor, input.resourceId!);
@@ -167,6 +177,13 @@ export class NavigationService {
     if (input.resourceType === 'automation_policy') await this.visiblePolicy(actor, input.resourceId!);
     if (input.resourceType === 'model_configuration') await this.agents.modelRecord(actor, input.resourceId!);
     if (input.resourceType === 'agent_approval') await this.agents.approvalRecord(actor, input.resourceId!);
+    if (input.resourceType === 'crm_account') await this.visibleCrm(actor, 'crmAccount', input.resourceId!);
+    if (input.resourceType === 'crm_contact') await this.visibleCrm(actor, 'crmContact', input.resourceId!);
+    if (input.resourceType === 'crm_lead') await this.visibleCrm(actor, 'crmLead', input.resourceId!);
+    if (input.resourceType === 'crm_import') await this.visibleCrm(actor, 'crmImportBatch', input.resourceId!);
+    if (input.resourceType === 'crm_discovery') await this.visibleCrm(actor, 'crmDiscoveryJob', input.resourceId!);
+    if (input.resourceType === 'crm_suppression') await this.visibleCrm(actor, 'crmSuppression', input.resourceId!);
+    if (input.resourceType === 'crm_duplicate') await this.visibleCrm(actor, 'crmDuplicateCandidate', input.resourceId!);
   }
 
   private async visibleMember(actor: SessionContext, userId: string): Promise<void> {
@@ -188,6 +205,12 @@ export class NavigationService {
   private async visibleSession(actor: SessionContext, sessionId: string): Promise<void> {
     const row = await this.identity.prisma.session.findFirst({ where: { id: sessionId, userId: actor.userId } });
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Session was not found');
+  }
+
+  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate', id: string): Promise<void> {
+    const tenantId = this.tenant(actor);
+    const row = await withTenant(this.database.prisma, tenantId, (tx) => (tx[model] as { findUnique: (input: unknown) => Promise<unknown> }).findUnique({ where: { tenantId_id: { tenantId, id } } }));
+    if (!row) throw new ApiException(404, 'NOT_FOUND', 'Record was not found');
   }
 
   private async visiblePolicy(actor: SessionContext, id: string): Promise<void> {
@@ -218,6 +241,14 @@ function writePermission(resourceType: string, action: string): string | null {
   }
   if (resourceType === 'agent' || resourceType === 'agent_run' || resourceType === 'automation_policy' || resourceType === 'model_configuration') return 'agents.manage';
   if (resourceType === 'agent_approval') return 'approvals.manage';
+  if (resourceType === 'crm_account') return 'crm.accounts.write';
+  if (resourceType === 'crm_contact') return 'crm.contacts.write';
+  if (resourceType === 'crm_lead') return 'crm.leads.write';
+  if (resourceType === 'crm_import') return 'crm.leads.import';
+  if (resourceType === 'crm_discovery') return 'crm.leads.discover';
+  if (resourceType === 'crm_suppression') return 'crm.suppression.manage';
+  if (resourceType === 'crm_duplicate') return 'crm.leads.merge';
+  if (resourceType === 'crm_policy') return 'crm.contact_policy.manage';
   return 'settings.manage';
 }
 

@@ -1,5 +1,5 @@
 import type { Job } from 'bullmq';
-import { createModelClient } from '@salesos/agent-core';
+import { createModelClient, generateTaskResult, type JsonSchema } from '@salesos/agent-core';
 import { advanceAgentRun, decodeEncryptionKey, readModelSelection, withTenant, type PrismaClient } from '@salesos/database';
 import type { AgentRunJobData } from '@salesos/shared';
 
@@ -12,12 +12,12 @@ export async function processAgentRunJob(job: Job<AgentRunJobData>, prisma: Pris
   return advanceAgentRun(prisma, tenantId, runId, {
     outboxId,
     complete: async (input) => {
-      const generated = await client.generateStructured<Record<string, unknown>>({
+      const generated = await generateTaskResult(client, {
         tenantId,
         task: input.task,
         promptVersion: 'mvp-1',
         messages: input.messages,
-        outputSchema: {
+        outputSchema: (input.outputSchema as JsonSchema | undefined) ?? {
           type: 'object',
           required: ['summary', 'strategy', 'draft'],
           properties: {

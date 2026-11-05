@@ -1,13 +1,13 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { createPrismaClient } from '@salesos/database';
-import { AGENT_RUN_JOB, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_JOB, foundationQueueName, type AgentRunJobData, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
+import { AGENT_RUN_JOB, CRM_DISCOVERY_JOB, CRM_IMPORT_JOB, CRM_QUALIFY_JOB, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_JOB, foundationQueueName, type AgentRunJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData } from '@salesos/shared';
 import { parseWorkerEnv } from './env';
 import { readWorkerHealth } from './health';
 import { processAgentRunJob } from './agent-job';
 import { processKnowledgeJob, purgeDueKnowledge } from './knowledge';
 import { externalPorts } from './ports';
-import { markFinalFailure, processFoundationPing, publishPendingOutbox } from './processor';
+import { markFinalFailure, processCrmJob, processFoundationPing, publishPendingOutbox } from './processor';
 
 async function main(): Promise<void> {
   const env = parseWorkerEnv(process.env);
@@ -22,12 +22,13 @@ async function main(): Promise<void> {
   queueConnection.on('error', () => undefined);
   workerConnection.on('error', () => undefined);
   const queueName = foundationQueueName(env.SALESOS_QUEUE_PREFIX);
-  const queue = new Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData>(queueName, { connection: queueConnection });
-  const worker = new Worker<FoundationJobData | KnowledgeJobData | AgentRunJobData>(
+  const queue = new Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData>(queueName, { connection: queueConnection });
+  const worker = new Worker<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData>(
     queueName,
     async (job) => {
       if (job.name === KNOWLEDGE_PROCESS_JOB) return processKnowledgeJob(job as Job<KnowledgeJobData>, prisma);
       if (job.name === AGENT_RUN_JOB) return processAgentRunJob(job as Job<AgentRunJobData>, prisma, env.DATA_ENCRYPTION_KEY);
+      if (job.name === CRM_IMPORT_JOB || job.name === CRM_DISCOVERY_JOB || job.name === CRM_QUALIFY_JOB) return processCrmJob(job as Job<CrmJobData>, prisma, env.DATA_ENCRYPTION_KEY);
       return processFoundationPing(job as Job<FoundationJobData>, prisma);
     },
     { connection: workerConnection, concurrency: 4 },

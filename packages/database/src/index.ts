@@ -12,5 +12,6 @@ export type { StoredModelSelection } from './model-selection';
 export { loadPublishedContext, ContextError } from './published-context';
 export type { PinnedContext } from './published-context';
 export { ingestKnowledgeDocument, listDueKnowledgeDeletions, purgeKnowledgeContent } from './knowledge-ingest';
+export { audienceForLead, executeLeadTool, importCrmBatch, leadPromptFacts, lockAssignableOwner, memberIsAssignable, qualifyCrmLead, runCrmDiscovery, storeQualification } from './crm-work';
 export { withTenant } from './with-tenant';
 export { Prisma, PrismaClient } from '@prisma/client';

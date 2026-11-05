@@ -92,6 +92,14 @@ export class RunCreateDto {
   @IsString()
   @MaxLength(2000)
   goal?: string;
+
+  @IsOptional()
+  @IsIn(['PRODUCT_RESEARCH', 'LEAD_RESEARCH_AND_QUALIFY'])
+  planKind?: 'PRODUCT_RESEARCH' | 'LEAD_RESEARCH_AND_QUALIFY';
+
+  @IsOptional()
+  @IsUUID()
+  leadId?: string;
 }
 
 export class ModelCreateDto {

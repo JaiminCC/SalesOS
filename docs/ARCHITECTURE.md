@@ -327,8 +327,28 @@ The selected record is an opaque navigation context. `POST /api/v1/navigation/co
 
 Item mutations that must not put identifiers in the URL use `POST /api/v1/management/...` with the identifier in the JSON body. The Sprint 2 and Sprint 3 routes under `/api/v1/products`, `/api/v1/organizations`, and `/api/v1/auth` remain. Bulk changes run one record at a time, at most 50 identifiers, and return a result per identifier. Queries inside a tenant transaction run one after another so Prisma does not interleave statements on one transaction client.
 
-Audit events stay append-only. Published product versions stay immutable. Knowledge deletion still follows retention and tombstone rules. Leads, campaigns, conversations, meetings, analytics, SSO, integrations, WhatsApp, and webhooks stay simulated.
+Audit events stay append-only. Published product versions stay immutable. Knowledge deletion still follows retention and tombstone rules. Campaigns, conversations, meetings, analytics, SSO, integrations, WhatsApp, and webhooks stay simulated. Signed-in lead intelligence is live as of Sprint 5.
 
 ## 16. Agent management (Sprint 4)
 
 Signed-in Command Center, AI Agents, and Execution Inspector screens use the shared management components. Add, view, and edit pages keep database ids in a session-bound navigation token. Lists paginate, sort, and search on the server. Pause, cancel, and archive confirm first. `agent_runs`, `agent_run_steps`, `agent_actions`, and `llm_usage` reject SQL `DELETE`. Policy checks external sends before any mailbox call. A paused organization does not send. A test run records steps and leaves the outbound outcome `sent: false`.
+
+## 17. Lead intelligence (Sprint 5)
+
+Signed-in Lead Discovery uses `LeadsDesk` and PostgreSQL. The signed-out page stays the simulated demonstration. Companies, contacts, and leads are separate records. A discovery candidate is not a lead until a person promotes the company and creates a lead. The official qualification score comes from `scoreIcp` in `packages/shared/src/crm.ts`, pinned to the published product version and ICP. A model may explain that score. It does not replace it. Missing consent stays `CONSENT_UNKNOWN`. Suppression and an active human takeover block eligibility. Quiet hours return `ALLOW`, `BLOCK`, `REQUIRE_APPROVAL`, or `UNKNOWN`. `UNKNOWN` is not permission. Sprint 5 does not send email or WhatsApp, including when a policy result is `ALLOW`.
+
+Discovery providers that are implemented and tested are `manual` (USER PROVIDED DATA) and `test` (LOCAL TEST DATA, one fixed Northwind Logistics record). Both report `live: false`. No third-party company API is configured. Contact email and phone are AES-GCM ciphertext plus an HMAC. Suppression subjects are HMAC plus a short hint. Archive sets `archived_at`. It does not delete the row.
+
+## 18. Lead research runs (Sprint 5.1)
+
+`POST /api/v1/management/runs/create` accepts `planKind`. `PRODUCT_RESEARCH` keeps `buildSupervisorPlan`. `LEAD_RESEARCH_AND_QUALIFY` requires `leadId` and uses `buildLeadResearchPlan`. The plan is not chosen from the goal text. The lead plan raises that run's tool-call ceiling to 12. Product runs stay at 8.
+
+Assignment of a lead, account, or contact calls `member_is_assignable(tenant, user)`. That function is `SECURITY DEFINER`, owned by `salesos_directory`, and returns only a boolean. `salesos_app` still cannot read `users` or call `list_user_memberships`. A human takeover is a different table and is not closed when the owner changes.
+
+## 19. Assignment locks and CRM recovery (Sprint 5.2)
+
+Assignment takes `pg_advisory_xact_lock(hashtextextended(tenant, 0))` and then `lock_member_for_assignment`. That function locks the tenant, user, and membership rows before it calls `member_is_assignable`. Membership removal uses the same advisory lock. Organization status changes take it as well. When a membership, user, or organization leaves `ACTIVE`, a directory-owned trigger ends open `crm_assignments` for that owner and clears `owner_user_id`. It does not update `crm_takeovers`.
+
+`lead.qualification.explain` must return the official score, grade, and dimension fits. A payload that only repeats the score is `INSUFFICIENT_EXPLANATION`. The stored explanation then comes from the deterministic breakdown, and the qualification row does not name a model. The score still comes from `scoreIcp`.
+
+`crm.import`, `crm.discovery`, and `crm.qualify` claim `crm_work_leases`, commit each row, and can be continued after the lease expires. A second worker refuses the job while the lease is current. Cancellation, a suspended tenant, and a revoked permission stop the job. See `docs/CRM_WORKER_RECOVERY.md` and `docs/LEAD_QUALIFICATION_EXPLANATIONS.md`.

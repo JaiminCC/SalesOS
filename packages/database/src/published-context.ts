@@ -35,7 +35,12 @@ export async function loadPublishedContext(tx: Prisma.TransactionClient, tenantI
     : await tx.productVersion.findFirst({ where: { tenantId, productId, status: 'PUBLISHED' }, orderBy: { versionNumber: 'desc' } });
   if (!version || version.productId !== productId) throw new ContextError(404, 'Published version was not found');
   if (version.status !== 'PUBLISHED') throw new ContextError(409, 'Live runs require a published version');
-  const snapshot = parseSnapshot(version.snapshot);
+  let snapshot;
+  try {
+    snapshot = parseSnapshot(version.snapshot);
+  } catch {
+    throw new ContextError(409, 'The published version cannot be used');
+  }
   const approved = await tx.knowledgeDocument.findMany({
     where: { tenantId, productId, status: 'APPROVED', deletedAt: null, id: { in: snapshot.knowledgeDocumentIds } },
     select: { id: true, fileName: true },

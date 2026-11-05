@@ -1,3 +1,5 @@
+import { LEAD_EXPLANATION_SCHEMA, acceptLeadExplanation, officialFromPrompt, type OfficialBreakdown } from '@salesos/shared';
+
 export type LlmMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -83,6 +85,61 @@ export async function generateWithRepair<T>(
       inputTokens: first.usage.inputTokens + second.usage.inputTokens,
       outputTokens: first.usage.outputTokens + second.usage.outputTokens,
     },
+  };
+}
+
+export async function generateTaskResult(provider: LlmProvider, input: LlmGenerateInput): Promise<LlmResult<Record<string, unknown>>> {
+  if (input.task !== 'supervisor.lead.qualification.explain') return provider.generateStructured<Record<string, unknown>>(input);
+  const official = officialFromPrompt(input.messages);
+  if (!official) return insufficientResult(input.tenantId);
+  return explainLead(provider, { ...input, outputSchema: LEAD_EXPLANATION_SCHEMA as unknown as JsonSchema }, official);
+}
+
+async function explainLead(provider: LlmProvider, input: LlmGenerateInput, official: OfficialBreakdown): Promise<LlmResult<Record<string, unknown>>> {
+  const first = await readModel(provider, input);
+  if (first && acceptLeadExplanation(first.result, official)?.quality === 'MODEL') {
+    const accepted = acceptLeadExplanation(first.result, official);
+    return { ...first, result: { explanationQuality: 'MODEL', summary: accepted && accepted.quality === 'MODEL' ? accepted.text : '' } };
+  }
+  const second = await readModel(provider, {
+    ...input,
+    messages: [...input.messages, { role: 'user', content: 'Return one JSON object. Copy the official score, grade, and dimension fits. Name each matched dimension in strengths and each unknown dimension in researchQuestions. Do not restate only the score.' }],
+  });
+  const repaired = second ? acceptLeadExplanation(second.result, official) : null;
+  const usage = {
+    inputTokens: (first?.usage.inputTokens ?? 0) + (second?.usage.inputTokens ?? 0),
+    outputTokens: (first?.usage.outputTokens ?? 0) + (second?.usage.outputTokens ?? 0),
+  };
+  if (repaired?.quality === 'MODEL') {
+    return { ...(second as LlmResult<unknown>), usage, result: { explanationQuality: 'MODEL', summary: repaired.text } };
+  }
+  return {
+    result: { explanationQuality: 'INSUFFICIENT_EXPLANATION', summary: 'INSUFFICIENT_EXPLANATION' },
+    usage,
+    model: second?.model ?? first?.model ?? 'none',
+    latencyMs: (first?.latencyMs ?? 0) + (second?.latencyMs ?? 0),
+    traceId: second?.traceId ?? first?.traceId ?? `trace-${input.tenantId}`,
+    usageExact: false,
+  };
+}
+
+async function readModel(provider: LlmProvider, input: LlmGenerateInput): Promise<LlmResult<unknown> | null> {
+  try {
+    return await provider.generateStructured<unknown>(input);
+  } catch (error) {
+    if (error instanceof LlmProviderError && (error.status === 400 || error.status === 502)) return null;
+    throw error;
+  }
+}
+
+function insufficientResult(tenantId: string): LlmResult<Record<string, unknown>> {
+  return {
+    result: { explanationQuality: 'INSUFFICIENT_EXPLANATION', summary: 'INSUFFICIENT_EXPLANATION' },
+    usage: { inputTokens: 0, outputTokens: 0 },
+    model: 'none',
+    latencyMs: 0,
+    traceId: `trace-${tenantId}`,
+    usageExact: false,
   };
 }
 

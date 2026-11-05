@@ -37,3 +37,16 @@ export type AgentRunJobData = {
   runId: string;
   outboxId: string;
 };
+
+export const CRM_IMPORT_JOB = 'crm.import';
+export const CRM_IMPORT_EVENT = 'crm.import.requested.v1';
+export const CRM_DISCOVERY_JOB = 'crm.discovery';
+export const CRM_DISCOVERY_EVENT = 'crm.discovery.requested.v1';
+export const CRM_QUALIFY_JOB = 'crm.qualify';
+export const CRM_QUALIFY_EVENT = 'crm.qualify.requested.v1';
+
+export type CrmJobData = {
+  tenantId: string;
+  recordId: string;
+  outboxId: string;
+};

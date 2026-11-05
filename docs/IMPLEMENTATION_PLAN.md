@@ -352,7 +352,25 @@ Live lists, dedicated add/view/edit pages, and body-based management routes cove
 
 ## Phase 4 — AI Sales Supervisor runtime
 
-Sprint 4 stores agent profiles, runs, steps, actions, policies, and model usage. Live agent, run, and command controls use the Sprint 3.1 management framework. Runs and steps are archived or cancelled. They are not hard-deleted. Leads, mailbox send, and campaigns stay later phases.
+Sprint 4 stores agent profiles, runs, steps, actions, policies, and model usage. Live agent, run, and command controls use the Sprint 3.1 management framework. Runs and steps are archived or cancelled. They are not hard-deleted. Mailbox send and campaigns stay later phases. Signed-in lead intelligence is Sprint 5.
+
+### Sprint 5 — Lead intelligence
+
+**Status:** Implemented. See `docs/SPRINT_5_COMPLETION.md`.
+
+Accounts, contacts, leads, imports, discovery candidates, qualifications, suppressions, eligibility decisions, assignments, and human takeovers are tenant tables with forced row-level security. The signed-in leads screen uses those records. The official score is deterministic and pinned to a published ICP. Discovery is limited to user-supplied lists and a labeled test directory. No outbound sender was added.
+
+### Sprint 5.1 — Lead intelligence completion
+
+**Status:** Implemented. See `docs/SPRINT_5_1_COMPLETION.md` and `docs/SPRINT_5_FINAL_ACCEPTANCE.md`.
+
+Owner assignment checks `member_is_assignable`. Lead explanation runs through the existing supervisor plan `LEAD_RESEARCH_AND_QUALIFY`. External discovery stays unconfigured. No outbound sender was added.
+
+### Sprint 5.2 — Lead intelligence final hardening
+
+**Status:** Implemented. See `docs/SPRINT_5_2_COMPLETION.md` and `docs/SPRINT_5_FINAL_ACCEPTANCE.md`.
+
+Assignment and membership changes share a lock, and inactive members lose actionable ownership. Qualification explanations must match the deterministic breakdown or the stored text is marked insufficient. CRM jobs recover after process kill. External discovery stays unconfigured. No outbound sender was added. Sprint 6 has not started.
 
 ### T4.1 Persist runs, steps, and actions
 

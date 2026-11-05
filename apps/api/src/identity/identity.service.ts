@@ -258,9 +258,12 @@ export class IdentityService {
     if (!actor.permissions.includes('organizations.manage') && !actor.roles.some((role) => isOwner(role))) {
       throw new ApiException(403, 'FORBIDDEN', 'Organization management is not allowed');
     }
-    const tenant = await this.database.prisma.tenant.update({
-      where: { id: tenantId },
-      data: { name: input.name, status: input.status },
+    const tenant = await this.database.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId}, 0))`;
+      return tx.tenant.update({
+        where: { id: tenantId },
+        data: { name: input.name, status: input.status },
+      });
     });
     await this.audit(tenantId, actor.userId, 'organization.update', 'organization', tenantId, requestId);
     await this.security(actor.userId, tenantId, 'organization.update', 'accepted', requestId, { status: input.status ?? null });

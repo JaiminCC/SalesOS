@@ -135,6 +135,36 @@ describe.skipIf(!adminUrl || !appUrl || !workerUrl)('security definer privileges
         { proname: 'list_user_memberships', owner: 'salesos_directory', search_path: 'search_path=pg_catalog' },
         { proname: 'lookup_invitation', owner: 'salesos_directory', search_path: 'search_path=pg_catalog' },
       ]);
+      const assignable = await admin.query<{ proname: string; owner: string; search_path: string }>(
+        `SELECT p.proname, pg_get_userbyid(p.proowner) AS owner,
+                (SELECT option FROM unnest(p.proconfig) AS option WHERE option LIKE 'search_path=%') AS search_path
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'member_is_assignable'`,
+      );
+      expect(assignable.rows).toEqual([
+        { proname: 'member_is_assignable', owner: 'salesos_directory', search_path: 'search_path=pg_catalog' },
+      ]);
+      const locking = await admin.query<{ proname: string; owner: string; search_path: string }>(
+        `SELECT p.proname, pg_get_userbyid(p.proowner) AS owner,
+                (SELECT option FROM unnest(p.proconfig) AS option WHERE option LIKE 'search_path=%') AS search_path
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'lock_member_for_assignment'`,
+      );
+      expect(locking.rows).toEqual([
+        { proname: 'lock_member_for_assignment', owner: 'salesos_directory', search_path: 'search_path=pg_catalog' },
+      ]);
+      const privileges = await application.query<{ lock: boolean; ending: boolean; users: boolean }>(
+        `SELECT has_function_privilege(current_user, 'public.lock_member_for_assignment(uuid, uuid)', 'EXECUTE') AS lock,
+                has_function_privilege(current_user, 'public.end_member_ownership(uuid, uuid)', 'EXECUTE') AS ending,
+                has_table_privilege(current_user, 'public.users', 'SELECT') AS users`,
+      );
+      expect(privileges.rows[0]).toEqual({ lock: true, ending: false, users: false });
+      const decision = await application.query<{ member_is_assignable: boolean }>(
+        'SELECT public.member_is_assignable($1::uuid, $2::uuid)',
+        [tenantA, '99999999-9999-4999-8999-999999999999'],
+      );
+      expect(decision.rows[0]?.member_is_assignable).toBe(false);
+      await expect(application.query('SELECT * FROM public.users')).rejects.toThrow(/permission denied/i);
       await expect(application.query('SELECT * FROM public.list_user_memberships($1::uuid)', [tenantA])).rejects.toThrow(/permission denied/i);
       await expect(application.query('SELECT * FROM public.lookup_invitation($1)', ['not-a-token'])).rejects.toThrow(/permission denied/i);
     } finally {

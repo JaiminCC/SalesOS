@@ -274,3 +274,17 @@ The current `components/data.js` companies move into `packages/database/fixtures
 - A third test sets tenant A and requests an id from tenant B and expects zero rows.
 
 No migration in this repository is approved until those three tests exist. The reference `schema.sql` may be used as the starting DDL review, then folded into versioned migrations. It is not executed by hand against production.
+
+## 13. CRM tables (Sprint 5)
+
+Migration `20261105160000_crm_leads` adds the tenant tables listed in `packages/database/src/tenant-tables.ts` from `crm_accounts` through `crm_contact_policies`. Each has `ENABLE` and `FORCE ROW LEVEL SECURITY` and the `tenant_isolation` policy. Grants go to `salesos_app` and `salesos_worker`, not `salesos_identity`.
+
+`crm_accounts.domain` is unique per tenant among rows that are not archived. `crm_leads` is unique per tenant, account, and product among rows that are not archived, so the same company can have a lead for another product. `crm_contacts` stores email and phone as ciphertext, HMAC, and a short hint. `crm_suppressions` stores an HMAC and hint, not the raw address. `crm_discovery_candidates` stay separate from `crm_leads` until a person creates a lead. `crm_qualifications` keeps each score, the scoring version, the weights, and the explanation. `crm_takeovers` is human communication control. `crm_assignments` is ownership. Reassignment does not close a takeover. `agent_runs.lead_id` is optional and points at `crm_leads`.
+
+Records that support suppression, consent, or audit are archived. They are not hard-deleted by the CRM API.
+
+Migration `20261105170000_member_assignable` adds `member_is_assignable(uuid, uuid)`. It is owned by `salesos_directory`, uses `search_path = pg_catalog`, and returns true only when the user is `ACTIVE`, the membership in that tenant is `ACTIVE`, and the tenant is `ACTIVE`. `EXECUTE` is granted to `salesos_app` and `salesos_worker`. `SELECT` on `users` is granted to `salesos_directory` only.
+
+Migration `20261105171000_contact_owner` adds `crm_contacts.owner_user_id`. Company and lead owner columns already existed.
+
+Migration `20261105180000_assignment_lock` adds `lock_member_for_assignment(uuid, uuid)` and `crm_work_leases`. The lock function is `VOLATILE`, `SECURITY DEFINER`, owned by `salesos_directory`, and granted to `salesos_app` and `salesos_worker`. It locks the tenant, user, and membership rows, then calls `member_is_assignable`. `end_member_ownership` and the status triggers on `memberships`, `users`, and `tenants` end open assignments and clear current owners when status leaves `ACTIVE`. Those triggers are executable by `salesos_identity`. `salesos_app` cannot execute `end_member_ownership` and still cannot read `users`. `UPDATE` on the identity rows used for `FOR UPDATE`, and `SELECT`/`UPDATE` on the four CRM owner tables, are granted to `salesos_directory` only. `crm_takeovers` is not in that grant. `crm_work_leases` has forced row-level security and the `tenant_isolation` policy.

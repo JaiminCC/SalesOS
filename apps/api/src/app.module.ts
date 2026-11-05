@@ -12,6 +12,8 @@ import { OrganizationsController } from './identity/organizations.controller';
 import { JobsController } from './jobs/jobs.controller';
 import { AgentsController } from './agents/agents.controller';
 import { AgentsService } from './agents/agents.service';
+import { CrmController } from './crm/crm.controller';
+import { CrmService } from './crm/crm.service';
 import { ManagementController } from './management/management.controller';
 import { NavigationController } from './navigation/navigation.controller';
 import { NavigationService } from './navigation/navigation.service';
@@ -22,8 +24,8 @@ import { FoundationQueue } from './jobs/queue.provider';
 import { RedisService } from './redis/redis.service';
 
 @Module({
-  controllers: [HealthProbeController, HealthController, JobsController, AuthController, OrganizationsController, ProductsController, ProductDefaultsController, NavigationController, ManagementController, AgentsController],
-  providers: [AppConfig, DatabaseService, RedisService, HealthService, FoundationQueue, JobsService, IdentityDatabase, IdentityService, CsrfMiddleware, ProductsService, NavigationService, AgentsService],
+  controllers: [HealthProbeController, HealthController, JobsController, AuthController, OrganizationsController, ProductsController, ProductDefaultsController, NavigationController, ManagementController, AgentsController, CrmController],
+  providers: [AppConfig, DatabaseService, RedisService, HealthService, FoundationQueue, JobsService, IdentityDatabase, IdentityService, CsrfMiddleware, ProductsService, NavigationService, AgentsService, CrmService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

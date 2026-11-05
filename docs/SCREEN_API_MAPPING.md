@@ -82,18 +82,25 @@ Phase 4. Tests: cross-tenant run id returns 404; replay of a failed research run
 
 ## 6. Lead Discovery (`leads`)
 
-| Control | API |
-|---|---|
-| Table | `GET /tenants/{tenantId}/accounts` and leads query `stage`, `q` |
-| Detail | `GET /tenants/{tenantId}/accounts/{accountId}` with evidence |
-| Run AI research | `POST /tenants/{tenantId}/campaigns/{campaignId}/discover` or account-scoped research job |
-| Mark engaged | `POST /tenants/{tenantId}/leads/{leadId}/transitions` `{ state: "ENGAGED", version }` |
-| Prepare pitch | `POST /tenants/{tenantId}/leads/{leadId}/drafts` → 202 |
-| Queue for approval | Draft lands in `AWAITING_APPROVAL` only after policy. The button does not insert an approval by itself if evidence is missing (422). |
+Signed out, this page remains the simulated demonstration. Signed in, it renders `LeadsDesk`. Paths are `/workspace/leads`, `/workspace/leads/add`, `/workspace/leads/view`, and `/workspace/leads/edit`. The URL does not contain a database id. The tab stores a navigation token. Every route below is `POST /api/v1/management/...` with the id in the JSON body. The active organization comes from the session.
 
-Phase 5 for research and scores. Phase 6 for drafts. The score ring uses `leads.score` and evidence confidence, not a decorative formula.
+| Screen | Endpoint | Permission |
+|---|---|---|
+| Company list, get, create, update, archive | `accounts/list`, `accounts/get`, `accounts/create`, `accounts/update`, `accounts/archive` | `crm.accounts.read` or `crm.accounts.write` |
+| Contact list, get, create, update | `contacts/list`, `contacts/get`, `contacts/create`, `contacts/update` | `crm.contacts.read` or `crm.contacts.write` |
+| Lead list, get, create, update, stage, bulk stage | `leads/list`, `leads/get`, `leads/create`, `leads/update`, `leads/stage`, `leads/bulk-stage` | `crm.leads.read` or `crm.leads.write` |
+| Summary counts | `leads/summary` | `crm.leads.read` |
+| Assign owner | `leads/assign` | `crm.leads.assign` |
+| Human takeover | `ownership/takeover` | `crm.leads.assign` |
+| CSV template, preview, execute, errors, retry | `lead-imports/template`, `lead-imports/preview`, `lead-imports/execute`, `lead-imports/get`, `lead-imports/errors`, `lead-imports/retry` | `crm.leads.import` |
+| Discovery providers, create, get, cancel, promote | `discovery/providers`, `discovery/create`, `discovery/get`, `discovery/cancel`, `discovery/promote` | `crm.leads.discover` |
+| Qualification and human override | `qualification/run`, `qualification/override` | `crm.leads.qualify` |
+| Eligibility | `eligibility/evaluate` | `crm.leads.read` |
+| Suppression | `suppression/list`, `suppression/create`, `suppression/remove` | `crm.suppression.read` or `crm.suppression.manage` |
+| Duplicate review and merge | `duplicates/list`, `duplicates/merge` | `crm.leads.read` or `crm.leads.merge` |
+| Contact windows | `contact-policies/get`, `contact-policies/update` | `crm.leads.read` or `crm.contact_policy.manage` |
 
-Tests: CSV import dedupes domain; evidence without `license_status` cannot be used in a draft; tenant B's account id is 404 (AT-01).
+There is no send endpoint. Campaigns, inbox, qualification prototype, meetings, and WhatsApp stay simulated.
 
 ## 7. Campaigns (`campaigns`)
 
