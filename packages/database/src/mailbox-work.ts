@@ -19,9 +19,10 @@ import {
 import { readProviderPage, refreshOAuthToken, type NormalizedMail, type ProviderCursor } from '@salesos/integrations';
 import { decryptField, encryptField } from './crypto';
 import { memberIsAssignable } from './crm-work';
+import { classifyProviderEvidence, credentialsConfigured, observeMailboxSync } from './mailbox-operations';
 import { withTenant } from './with-tenant';
 
-type Actor = { tenantId: string; userId: string; key: Buffer; pause?: 'after-row' | 'before-write' | 'after-claim'; runId?: string };
+type Actor = { tenantId: string; userId: string; key: Buffer; pause?: 'after-row' | 'before-write' | 'after-claim' | 'after-response' | 'during-commit' | 'after-commit' | 'during-recovery'; runId?: string };
 type StopReason = 'cancelled' | 'suspended' | 'forbidden' | 'revoked';
 const LEASE_SECONDS = 30;
 
@@ -793,8 +794,9 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
     const connection = await tx.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId: actor.tenantId, id: connectionId } } });
     if (!connection || connection.status === 'DISCONNECTED') return { stopped: 'forbidden' as const };
     const scopes = Array.isArray(connection.scopes) ? connection.scopes.map(String) : [];
+    if (connection.syncPaused) return { status: 'PAUSED' as const };
     if (scopes.some((item) => /gmail\.send|mail\.send/i.test(item))) {
-      await tx.mailboxConnection.update({ where: { tenantId_id: { tenantId: actor.tenantId, id: connectionId } }, data: { status: 'NOT_CONFIGURED', lastError: 'SEND_SCOPE_PRESENT', sendingEnabled: false } });
+      await tx.mailboxConnection.update({ where: { tenantId_id: { tenantId: actor.tenantId, id: connectionId } }, data: { status: 'NOT_CONFIGURED', lastError: 'SEND_SCOPE_PRESENT', sendingEnabled: false, live: false } });
       return { status: 'SEND_SCOPE_PRESENT' as const };
     }
     const lease = await claimLease(tx, actor.tenantId, 'mailbox.incremental_sync', connectionId);
@@ -810,12 +812,22 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
       address: connection.address,
       cursor,
       fence: { token: lease.token, version: lease.version, revocationVersion: connection.revocationVersion },
+      scopes,
     };
   });
   if ('stopped' in claimed && claimed.stopped) return { imported: 0, stopped: claimed.stopped };
   if ('held' in claimed) return { imported: 0, held: true };
   if ('status' in claimed) return { imported: 0, status: claimed.status };
   const fence = claimed.fence;
+  const startedAt = Date.now();
+  const cursorBefore = JSON.stringify(claimed.cursor);
+  console.info(JSON.stringify({ metric: 'mailbox_sync_started', provider, code: 'STARTED' }));
+  const record = (status: string, extra: { error?: string | null; imported?: number; duplicates?: number; cursorAfter?: string | null; rateLimited?: boolean; identityMatched?: boolean; authenticated?: boolean; pageCommitted?: boolean; fenceOk?: boolean } = {}) => observeMailboxSync(prisma, actor, {
+    connectionId, provider, status, error: extra.error ?? null, imported: extra.imported ?? 0, duplicates: extra.duplicates ?? 0,
+    cursorBefore, cursorAfter: extra.cursorAfter ?? cursorBefore, rateLimited: extra.rateLimited, leaseVersion: fence.version, fetchImpl, startedAt,
+    readScope: claimed.scopes.find((item) => /readonly|mail\.read/i.test(item)) ?? 'unknown', identityMatched: extra.identityMatched,
+    scopes: claimed.scopes, authenticated: extra.authenticated, pageCommitted: extra.pageCommitted, fenceOk: extra.fenceOk,
+  });
   if (actor.pause === 'after-claim') {
     writeSync(1, 'checkpoint\n');
     await new Promise(() => undefined);
@@ -823,11 +835,13 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
   let access = claimed.access;
   if (!access) {
     await finishProvider(prisma, actor, connectionId, fence, 'NOT_CONFIGURED', 'TOKEN_MISSING');
+    await record('NOT_CONFIGURED', { error: 'TOKEN_MISSING' });
     return { imported: 0, status: 'NOT_CONFIGURED' };
   }
   if (claimed.expiresAt && claimed.expiresAt.getTime() < Date.now() + 60_000) {
     if (!claimed.refresh) {
       await finishProvider(prisma, actor, connectionId, fence, 'NOT_CONFIGURED', 'REFRESH_MISSING');
+      await record('NOT_CONFIGURED', { error: 'REFRESH_MISSING' });
       return { imported: 0, status: 'NOT_CONFIGURED' };
     }
     try {
@@ -851,6 +865,7 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
       if (!saved) return { imported: 0, stopped: 'revoked' };
     } catch {
       await finishProvider(prisma, actor, connectionId, fence, 'SYNC_ERROR', 'TOKEN_REFRESH_FAILED');
+      await record('SYNC_ERROR', { error: 'TOKEN_REFRESH_FAILED' });
       return { imported: 0, status: 'SYNC_ERROR' };
     }
   }
@@ -861,14 +876,21 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
   } catch (error) {
     const message = error instanceof Error ? error.message : 'PROVIDER_READ_FAILED';
     await finishProvider(prisma, actor, connectionId, fence, 'SYNC_ERROR', message.includes('rate limited') ? 'RATE_LIMIT' : 'PROVIDER_READ_FAILED');
+    await record(message.includes('rate limited') ? 'RATE_LIMIT' : 'SYNC_ERROR', { error: message.includes('rate limited') ? 'RATE_LIMIT' : message, rateLimited: message.includes('rate limited') });
     return { imported: 0, status: 'SYNC_ERROR', rateLimited: message.includes('rate limited') };
   }
   if (page.rateLimited) {
-    await noteProvider(prisma, actor, connectionId, fence, 'RATE_LIMIT');
+    await noteProvider(prisma, actor, connectionId, fence, 'RATE_LIMIT', 'RATE_LIMIT');
+    await record('RATE_LIMIT', { error: 'RATE_LIMIT', rateLimited: true, authenticated: false, pageCommitted: false, fenceOk: true });
     return { imported: 0, status: 'RATE_LIMIT', rateLimited: true };
+  }
+  if (actor.pause === 'after-response') {
+    writeSync(1, 'checkpoint\n');
+    await new Promise(() => undefined);
   }
   if (page.mailboxAddress && page.mailboxAddress.toLowerCase() !== claimed.address.toLowerCase()) {
     await noteProvider(prisma, actor, connectionId, fence, 'IDENTITY_MISMATCH');
+    await record('IDENTITY_MISMATCH', { error: 'IDENTITY_MISMATCH' });
     return { imported: 0, status: 'IDENTITY_MISMATCH' };
   }
   if (page.expiredCursor) {
@@ -884,11 +906,16 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
         create: { tenantId: actor.tenantId, connectionId, cursor: JSON.stringify(current) },
         update: { cursor: JSON.stringify(current) },
       });
-      await tx.mailboxConnection.updateMany({ where: { tenantId: actor.tenantId, id: connectionId, revocationVersion: fence.revocationVersion, status: { not: 'DISCONNECTED' } }, data: { lastError: 'CURSOR_RECOVERED', status: 'CONFIGURED_UNVERIFIED' } });
+      if (actor.pause === 'during-recovery') {
+        writeSync(1, 'checkpoint\n');
+        await new Promise(() => undefined);
+      }
+      await tx.mailboxConnection.updateMany({ where: { tenantId: actor.tenantId, id: connectionId, revocationVersion: fence.revocationVersion, status: { not: 'DISCONNECTED' } }, data: { lastError: 'CURSOR_RECOVERED', status: 'CURSOR_RECOVERED', live: false, sendingEnabled: false } });
       await finishLease(tx, actor.tenantId, 'mailbox.incremental_sync', connectionId, 'COMPLETED', fence);
-      return { recovered: true as const };
+      return { recovered: true as const, cursor: JSON.stringify(current) };
     });
     if ('stopped' in recovered) return { imported: 0, stopped: recovered.stopped };
+    await record('CURSOR_RECOVERED', { error: 'CURSOR_RECOVERED', cursorAfter: recovered.cursor, authenticated: true, pageCommitted: false, fenceOk: true });
     return { imported: 0, status: 'CURSOR_RECOVERED' };
   }
   const stored = await withTenant(prisma, actor.tenantId, async (tx) => {
@@ -897,6 +924,10 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
     let imported = 0;
     for (const message of page.messages) {
       if (await ingestOne(tx, actor.tenantId, connectionId, normalizeProviderMessage(message))) imported += 1;
+    }
+    if (actor.pause === 'during-commit') {
+      writeSync(1, 'checkpoint\n');
+      await new Promise(() => undefined);
     }
     const current = parseCursor((await tx.mailboxSyncCursor.findUnique({ where: { tenantId_connectionId: { tenantId: actor.tenantId, connectionId } } }))?.cursor);
     current.pending = [];
@@ -909,13 +940,22 @@ async function syncProviderMailbox(prisma: PrismaClient, actor: Actor, connectio
       create: { tenantId: actor.tenantId, connectionId, cursor: JSON.stringify(current) },
       update: { cursor: JSON.stringify(current) },
     });
-    await tx.mailboxConnection.updateMany({ where: { tenantId: actor.tenantId, id: connectionId, revocationVersion: fence.revocationVersion, status: { not: 'DISCONNECTED' } }, data: { lastSyncAt: new Date(), lastError: null, status: 'SYNCED', live: false, sendingEnabled: false } });
-    await tx.mailboxSyncEvent.create({ data: { tenantId: actor.tenantId, connectionId, status: 'SYNCED', detail: `imported ${imported}` } });
+    const evidence = classifyProviderEvidence({
+      provider, fetchImpl, scopes: claimed.scopes, identityMatched: Boolean(page.mailboxAddress), authenticated: true, pageCommitted: !page.nextCursor, fenceOk: true, credentialsConfigured: credentialsConfigured(provider),
+    });
+    const status = page.nextCursor ? 'SYNC_PARTIAL' : evidence === 'REAL_READ_VERIFIED' ? 'SYNCED' : 'STUB_SYNCED';
+    await tx.mailboxConnection.updateMany({ where: { tenantId: actor.tenantId, id: connectionId, revocationVersion: fence.revocationVersion, status: { not: 'DISCONNECTED' } }, data: { lastSyncAt: new Date(), lastError: null, status, live: false, sendingEnabled: false } });
+    await tx.mailboxSyncEvent.create({ data: { tenantId: actor.tenantId, connectionId, status, detail: `imported ${imported}` } });
     await finishLease(tx, actor.tenantId, 'mailbox.incremental_sync', connectionId, 'COMPLETED', fence);
-    return { imported };
+    return { imported, status, cursor: JSON.stringify(current), duplicates: page.messages.length - imported };
   });
   if ('stopped' in stored) return { imported: 0, stopped: stored.stopped };
-  return { imported: stored.imported, status: 'SYNCED' };
+  if (actor.pause === 'after-commit') {
+    writeSync(1, 'checkpoint\n');
+    await new Promise(() => undefined);
+  }
+  await record(stored.status, { imported: stored.imported, duplicates: stored.duplicates, cursorAfter: stored.cursor, identityMatched: Boolean(page.mailboxAddress), authenticated: true, pageCommitted: stored.status === 'SYNCED', fenceOk: true });
+  return { imported: stored.imported, status: stored.status };
 }
 
 function normalizeProviderMessage(message: NormalizedMail): InboundMessage {
@@ -930,10 +970,10 @@ async function finishProvider(prisma: PrismaClient, actor: Actor, connectionId: 
   });
 }
 
-async function noteProvider(prisma: PrismaClient, actor: Actor, connectionId: string, fence: SyncFence, error: string): Promise<void> {
+async function noteProvider(prisma: PrismaClient, actor: Actor, connectionId: string, fence: SyncFence, error: string, status?: string): Promise<void> {
   await withTenant(prisma, actor.tenantId, async (tx) => {
     if (await providerFence(tx, actor, connectionId, fence) !== 'ok') return;
-    await tx.mailboxConnection.updateMany({ where: { tenantId: actor.tenantId, id: connectionId, revocationVersion: fence.revocationVersion, status: { not: 'DISCONNECTED' } }, data: { lastError: error, live: false, sendingEnabled: false } });
+    await tx.mailboxConnection.updateMany({ where: { tenantId: actor.tenantId, id: connectionId, revocationVersion: fence.revocationVersion, status: { not: 'DISCONNECTED' } }, data: { lastError: error, ...(status ? { status } : {}), live: false, sendingEnabled: false } });
     await finishLease(tx, actor.tenantId, 'mailbox.incremental_sync', connectionId, 'COMPLETED', fence);
   });
 }

@@ -11,6 +11,9 @@ const SECTIONS = [
   ['approvals', 'Approvals', 'mailbox_draft'],
   ['delivery', 'Delivery', 'mailbox_draft'],
   ['sending', 'Sending', 'mailbox_draft'],
+  ['operations', 'Operations', 'mailbox_connection'],
+  ['syncs', 'Sync jobs', 'mailbox_connection'],
+  ['alerts', 'Alerts', 'mailbox_connection'],
 ];
 
 export default function InboxDesk({ mode, permissions = [], notify, onNavigate }) {
@@ -35,7 +38,11 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
   const canSend = permissions.includes('mailbox.send');
   const canReview = permissions.includes('mailbox.review');
   const canInvestigate = permissions.includes('mailbox.send.review');
+  const canOperate = permissions.includes('mailbox.operations.manage');
+  const canRecover = permissions.includes('mailbox.sync.recover');
   const [confirm, setConfirm] = useState('');
+  const [overview, setOverview] = useState(null);
+  const operational = section === 'operations' || section === 'syncs' || section === 'alerts';
   const [quota, setQuota] = useState(null);
   const [note, setNote] = useState('');
 
@@ -55,14 +62,16 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
     if (mode !== 'list') return undefined;
     let cancelled = false;
     setLoading(true);
-    const path = section === 'threads' ? 'threads/list' : section === 'drafts' || section === 'approvals' ? 'drafts/list' : section === 'delivery' || section === 'sending' ? 'delivery/list' : 'mailboxes/list';
+    const path = section === 'threads' ? 'threads/list' : section === 'drafts' || section === 'approvals' ? 'drafts/list' : section === 'delivery' || section === 'sending' ? 'delivery/list' : section === 'operations' ? 'operations/connections' : section === 'syncs' ? 'operations/runs' : section === 'alerts' ? 'operations/alerts' : 'mailboxes/list';
     Promise.all([
       managementRequest('mailboxes/providers', {}),
       managementRequest(path, { q: query, page, pageSize, sortBy: 'createdAt', sortDirection: 'desc' }),
       managementRequest('email-sending/status', {}),
-    ]).then(([sources, result, sending]) => {
+      operational ? managementRequest('operations/overview', {}) : Promise.resolve(null),
+    ]).then(([sources, result, sending, summary]) => {
       if (cancelled) return;
       setQuota(sending);
+      setOverview(summary);
       setProviders(sources.providers || []);
       setRows(result.items || []);
       setTotal(result.total || 0);
@@ -70,7 +79,7 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
       setLoading(false);
     }).catch((cause) => { if (!cancelled) { setError(cause.message); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [mode, section, page, pageSize, query]);
+  }, [mode, section, page, pageSize, query, operational]);
 
   useEffect(() => {
     if (mode === 'list' || section === 'connections') return undefined;
@@ -93,7 +102,9 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
         ? await managementRequest('drafts/get', { id: context.resourceId })
         : section === 'sending' || section === 'delivery'
           ? await managementRequest('delivery/get', { id: context.resourceId })
-          : await managementRequest('mailboxes/get', { id: context.resourceId });
+          : operational
+            ? await managementRequest('operations/get', { id: context.resourceId })
+            : await managementRequest('mailboxes/get', { id: context.resourceId });
       if (!cancelled) { setRecord(loaded); setError(''); setLoading(false); }
     }).catch((cause) => { if (!cancelled) setError(cause.message); });
     return () => { cancelled = true; };
@@ -126,7 +137,7 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
   }, [mode, section, record]);
 
   async function openRow(item, action = 'view') {
-    const opened = await openNavigation({ resourceType: current[2], action, resourceId: item.id });
+    const opened = await openNavigation({ resourceType: current[2], action, resourceId: operational && section !== 'operations' ? item.connectionId : item.id });
     rememberNavigation(current[2], action, opened.token);
     onNavigate('inbox', action);
   }
@@ -142,12 +153,13 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
           <p>{providers.map((item) => `${item.label}: ${item.availability}`).join(' · ')} · LIVE SEND NOT CONFIGURED</p>
           <p>Read-only mailbox. Approval does not send. Capture stays unsent.</p>
           {section === 'sending' && <p>SEND DISABLED · READ ONLY · SEND SCOPE REQUIRED · Attachments NOT SUPPORTED · DELIVERY UNKNOWN is not retried. Hourly cap {quota?.hourlyCap ?? 20}. Daily cap {quota?.dailyCap ?? 100}. Recipient limit {quota?.maxRecipients ?? 5}. Reserved {quota?.reserved ?? 0}. Accepted {quota?.accepted ?? 0}. Uncertain {quota?.uncertain ?? 0}.</p>}
+          {operational && overview && <p>{overview.google} · {overview.microsoft} · {overview.realSync} · {overview.sending} · Capture health {overview.captureHealth}. Healthy {overview.healthy}. Degraded {overview.degraded}. Reauthorization {overview.reauth}. Never synced {overview.neverSynced}. Syncs today {overview.syncsCompletedToday}. Failed {overview.failedSyncs}. Messages imported {overview.messagesImported}. Duplicates skipped {overview.duplicatesSkipped}. Uncertain deliveries {overview.uncertainDeliveries}. Capture is not live-provider healthy.</p>}
           <SearchInput id="inbox-search" label="Search" value={query} onChange={(value) => { setQuery(value); setPage(1); }} />
           <PageSizeSelector value={pageSize} onChange={(value) => { setPageSize(value); setPage(1); }} />
           {!rows.length ? <EmptyState title="No mailbox records" subtitle="Add a capture mailbox to import messages you provide. External mailboxes are not configured." /> : (
             <DataTable label={current[1]}>
               <thead><tr><th>Record</th><th>Status</th><th /></tr></thead>
-              <tbody>{rows.map((item) => <tr key={item.id}><td>{item.address || item.subject || item.state || 'Record'}</td><td>{item.label || item.status || item.state || ''}</td><td><button type="button" className="btn" onClick={() => openRow(item)}>View</button>{(section === 'drafts' || section === 'approvals') && canDraft ? <button type="button" className="btn" onClick={() => openRow(item, 'edit')}>Edit</button> : null}</td></tr>)}</tbody>
+              <tbody>{rows.map((item) => <tr key={item.id}><td>{item.address || item.subject || item.state || item.label || 'Record'}</td><td>{item.label || item.status || item.state || ''}</td><td><button type="button" className="btn" onClick={() => openRow(item)}>View</button>{(section === 'drafts' || section === 'approvals') && canDraft ? <button type="button" className="btn" onClick={() => openRow(item, 'edit')}>Edit</button> : null}{section === 'operations' && canConnect ? <button type="button" className="btn" onClick={() => setConfirm(`sync:${item.id}`)}>Sync now</button> : null}{section === 'operations' && canOperate ? <button type="button" className="btn" onClick={() => setConfirm(`pause:${item.id}:${item.paused ? 'resume' : 'pause'}`)}>{item.paused ? 'Resume' : 'Pause'}</button> : null}{section === 'operations' && canRecover ? <button type="button" className="btn" onClick={() => setConfirm(`recover:${item.id}`)}>Recover cursor</button> : null}{section === 'alerts' && canOperate && item.state === 'OPEN' ? <button type="button" className="btn" onClick={() => setConfirm(`ack:${item.id}`)}>Acknowledge</button> : null}</td></tr>)}</tbody>
             </DataTable>
           )}
           <PaginationControls page={page} pageSize={pageSize} total={total} onPage={setPage} />
@@ -180,6 +192,10 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
       )}
       {mode === 'view' && record && (
         <RecordDetailsLayout title={record.subject || record.address || 'Mailbox'} actions={<button className="btn" type="button" onClick={() => onNavigate('inbox', 'list')}>Back</button>}>
+          {record.health && <p>Health {record.health}. Capture is not live-provider healthy. Sending {String(record.sendingEnabled === true)}.</p>}
+          {record.verification && <p>Verification {record.verification.origin} {record.verification.outcome}</p>}
+          {record.runs?.map((item) => <p key={item.id}>Sync {item.state} inserted {item.inserted}</p>)}
+          {record.errors?.map((item) => <p key={item.code}>{item.code}: {item.action}</p>)}
           {record.label && <p>{record.label} · live {String(record.live)}</p>}
           {record.status && <p>Status {record.status}</p>}
           {record.body && <p>{record.body}</p>}
@@ -216,6 +232,10 @@ export default function InboxDesk({ mode, permissions = [], notify, onNavigate }
         </RecordDetailsLayout>
       )}
       {confirm === 'disconnect' && record && <ConfirmDialog title="Disconnect mailbox" body="Stored tokens are cleared. This does not send email." confirmLabel="Disconnect" onCancel={() => setConfirm('')} onConfirm={() => managementRequest('mailboxes/disconnect', { id: record.id }).then(() => { setConfirm(''); notify('Mailbox disconnected.'); onNavigate('inbox', 'list'); })} />}
+      {confirm.startsWith('sync:') && <ConfirmDialog title="Sync mailbox" body="This requests a read-only sync. It does not send email." confirmLabel="Sync now" onCancel={() => setConfirm('')} onConfirm={() => managementRequest('mailbox-sync/run', { id: confirm.slice(5) }).then(() => { setConfirm(''); notify('Read-only sync requested. Nothing was sent.'); setQuery((value) => value); }).catch((cause) => setError(cause.message))} />}
+      {confirm.startsWith('pause:') && <ConfirmDialog title="Change sync" body="Scheduled reads pause or resume. This does not send email." confirmLabel="Confirm" onCancel={() => setConfirm('')} onConfirm={() => { const [, id, action] = confirm.split(':'); return managementRequest('operations/pause', { id, paused: action === 'pause' }).then(() => { setConfirm(''); notify(action === 'pause' ? 'Sync paused.' : 'Sync resumed.'); setQuery((value) => value); }); }} />}
+      {confirm.startsWith('recover:') && <ConfirmDialog title="Recover cursor" body="The saved sync position is reset. Messages are not deleted and nothing is sent." confirmLabel="Recover" onCancel={() => setConfirm('')} onConfirm={() => managementRequest('operations/recover-cursor', { id: confirm.slice(8) }).then(() => { setConfirm(''); notify('Cursor recovery recorded. Nothing was sent.'); }).catch((cause) => { setError(cause.message); setConfirm(''); })} />}
+      {confirm.startsWith('ack:') && <ConfirmDialog title="Acknowledge alert" body="The alert stays in history. This does not send email or change a delivery." confirmLabel="Acknowledge" onCancel={() => setConfirm('')} onConfirm={() => managementRequest('operations/alerts/acknowledge', { id: confirm.slice(4) }).then(() => { setConfirm(''); notify('Alert acknowledged.'); setQuery((value) => value); }).catch((cause) => setError(cause.message))} />}
       {confirm === 'investigate' && record && <ConfirmDialog title="Record investigation" body="This note does not mark the message delivered and does not change the provider result." confirmLabel="Record note" onCancel={() => setConfirm('')} onConfirm={() => managementRequest('delivery/investigate', { id: record.id, note }).then(() => managementRequest('delivery/get', { id: record.id })).then((loaded) => { setRecord(loaded); setConfirm(''); notify('Investigation recorded. Provider state was not changed.'); }).catch((cause) => setError(cause.message))} />}
     </ManagementPageLayout>
   );

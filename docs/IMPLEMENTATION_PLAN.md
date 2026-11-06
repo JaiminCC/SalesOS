@@ -896,4 +896,10 @@ Acceptance tests AT-01 through AT-26 are named on the tasks that implement them.
 
 Sprint 7 adds controlled outbound email on top of the Sprint 6 mailbox. The implementation plan for the requirement map is `docs/SPRINT_7_IMPLEMENTATION_PLAN.md`. Completion, security review, and the live-send decision are in `docs/SPRINT_7_COMPLETION.md`, `docs/SPRINT_7_SECURITY_REVIEW.md`, and `docs/LIVE_EMAIL_SEND_ACCEPTANCE.md`.
 
-Live mailbox sync remains not tested. Live sending remains not authorized. Sprint 8 has not started.
+Live mailbox sync remains not tested. Live sending remains not authorized.
+
+## Sprint 8 status
+
+Sprint 8 adds the Communication Operations foundation: provider readiness, durable connection health, sync-run history, in-app alerts, and read-only recovery. The requirement map is `docs/SPRINT_8_IMPLEMENTATION_PLAN.md`. Completion and the live-read decision are in `docs/SPRINT_8_COMPLETION.md` and `docs/SPRINT_8_FINAL_ACCEPTANCE.md`.
+
+LIVE GMAIL — NOT CONFIGURED. LIVE MICROSOFT — NOT CONFIGURED. REAL READ-ONLY SYNC — NOT TESTED. Live sending remains not authorized. Sprint 9 has not started.

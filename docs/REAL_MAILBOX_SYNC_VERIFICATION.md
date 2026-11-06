@@ -1,6 +1,8 @@
 # Real mailbox sync verification
 
-**LIVE GMAIL — NOT TESTED.** **LIVE MICROSOFT — NOT TESTED.** **LIVE PROVIDER — NOT TESTED.**
+**LIVE GMAIL — NOT CONFIGURED.** **LIVE MICROSOFT — NOT CONFIGURED.** **REAL READ-ONLY SYNC — NOT TESTED.**
+
+Sprint 8.1 did not change that result. Provider readiness is `NOT_CONFIGURED` when both the client id and the client secret are absent. A stubbed sync is stored as `STUB_TESTED` with health `LOCAL_TEST_HEALTHY`. It is not `REAL_READ_VERIFIED`. Configured credentials alone stay `CONFIGURED_UNVERIFIED`.
 
 Google OAuth client id and secret are absent. Microsoft OAuth client id and secret are absent. No provider account was created and no secret was read out of the environment for a live call.
 
@@ -12,6 +14,7 @@ Local HTTP stubs in `packages/integrations/src/provider-read.spec.ts` cover:
 - Expired Gmail history, HTTP 404, which returns the caller to list mode.
 - Microsoft Graph delta messages, `conversationId` threading, and a delta link.
 - A delta URL that is not `https://graph.microsoft.com` is not fetched.
+- A Graph link with userinfo, a non-443 port, or a path outside `/v1.0/` is rejected. An incomplete or unsafe link is not stored as a completed sync.
 
 `apps/worker/src/mailbox-recovery.spec.ts` kills the provider sync after the lease claim and before the HTTP read. The follow-up call is held. After the lease expires, one stubbed Gmail message is stored. A second sync does not insert a duplicate.
 

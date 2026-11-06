@@ -83,6 +83,11 @@ export class IdDto {
   @IsUUID() id!: string;
 }
 
+export class SyncPauseDto {
+  @IsUUID() id!: string;
+  @IsBoolean() paused!: boolean;
+}
+
 export class InvestigationDto {
   @IsUUID() id!: string;
   @IsString() @MaxLength(500) note!: string;

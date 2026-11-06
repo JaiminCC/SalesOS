@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { Prisma, canAccess, decodeEncryptionKey, decryptField, encryptToken, hashState, investigateDelivery, queueMailboxImport, reconcileSend, reviewDraft, revokeMailboxConnection, saveDraft, sendDraft, sendQuotaSummary, submitDraft, syncConnection, withTenant } from '@salesos/database';
+import { Prisma, acknowledgeOperationalAlert, canAccess, decodeEncryptionKey, decryptField, encryptToken, hashState, investigateDelivery, listOperationalAlerts, listOperationalConnections, listProviderErrors, listSyncRuns, operationalConnection, operationsOverview, queueMailboxImport, reconcileSend, recoverMailboxCursor, reviewDraft, revokeMailboxConnection, saveDraft, sendDraft, sendQuotaSummary, setMailboxSyncPaused, submitDraft, syncConnection, withTenant } from '@salesos/database';
 import { sendWithGmail, sendWithGraph } from '@salesos/integrations';
-import { allowedRedirect, liveEmailSendEnabled, mailboxProviders, oauthAuthorizeUrl, pkcePair, sendScopeGranted } from '@salesos/shared';
+import { allowedRedirect, liveEmailSendEnabled, mailboxProviders, oauthAuthorizeUrl, pkcePair, providerReadiness, sendScopeGranted } from '@salesos/shared';
 import { webhookAuthentic, exchangeOAuthCode } from '@salesos/integrations';
 import { captureWebhookStatus } from '@salesos/shared';
 import { ApiException } from '../common/api.exception';
@@ -19,7 +19,9 @@ export class MailboxConnectionService {
   providers() {
     return {
       providers: mailboxProviders(this.config.env).map((item) => ({ ...item, availability: item.status === 'CAPTURE' ? 'MOCK / CAPTURE MODE' : item.status === 'NOT_CONFIGURED' ? 'NOT CONFIGURED' : item.status })),
+      readiness: providerReadiness(this.config.env),
       liveSend: 'NOT CONFIGURED' as const,
+      realSync: 'NOT TESTED' as const,
     };
   }
 
@@ -27,7 +29,7 @@ export class MailboxConnectionService {
     const tenantId = this.tenant(actor);
     return withTenant(this.database.prisma, tenantId, async (tx) => {
       const row = await tx.mailboxConnection.create({
-        data: { tenantId, provider: 'capture', providerMailboxId: `capture-${randomBytes(8).toString('hex')}`, address: body.address, connectedBy: actor.userId, status: 'CAPTURE', live: false, sendingEnabled: false, scopes: ['READ', 'DRAFT'] },
+        data: { tenantId, provider: 'capture', providerMailboxId: `capture-${randomBytes(8).toString('hex')}`, address: body.address, connectedBy: actor.userId, status: 'CAPTURE', healthState: 'CAPTURE', live: false, sendingEnabled: false, scopes: ['READ', 'DRAFT'] },
       });
       await tx.mailboxAccess.create({ data: { tenantId, connectionId: row.id, userId: actor.userId, accessRole: 'SEND' } });
       await tx.auditEvent.create({ data: { tenantId, actorType: 'user', actorId: actor.userId, action: 'mailbox.capture.create', entityType: 'mailbox_connection', entityId: row.id, payload: { requestId, live: false } } });
@@ -156,7 +158,7 @@ export class MailboxConnectionService {
 
   private publicConnection(row: { id: string; provider: string; address: string; status: string; live: boolean; lastSyncAt: Date | null; lastError: string | null; sendingEnabled: boolean; sendCapability?: string }) {
     const capability = row.sendCapability ?? 'READ_ONLY';
-    return { id: row.id, provider: row.provider, address: row.address, status: row.status, live: row.live, lastSyncAt: row.lastSyncAt, lastError: row.lastError, sendingEnabled: row.sendingEnabled, sendCapability: capability, label: row.status === 'CAPTURE' ? 'MOCK / CAPTURE MODE' : row.status === 'DISCONNECTED' ? 'DISCONNECTED' : row.status === 'SYNCED' ? 'SYNCED' : row.status === 'CONFIGURED_UNVERIFIED' ? 'CONFIGURED UNVERIFIED' : row.live ? 'LIVE CONNECTED' : 'NOT CONFIGURED' };
+    return { id: row.id, provider: row.provider, address: row.address, status: row.status, live: row.live, lastSyncAt: row.lastSyncAt, lastError: row.lastError, sendingEnabled: row.sendingEnabled, sendCapability: capability, label: row.status === 'CAPTURE' ? 'MOCK / CAPTURE MODE' : row.status === 'DISCONNECTED' ? 'DISCONNECTED' : row.status === 'STUB_SYNCED' ? 'LOCAL TEST — NOT LIVE' : row.status === 'SYNC_PARTIAL' ? 'PARTIAL — NOT COMPLETE' : row.status === 'RATE_LIMIT' ? 'RATE LIMITED' : row.status === 'CURSOR_RECOVERED' ? 'CURSOR RECOVERED — NOT CURRENT' : row.status === 'SYNCED' ? 'SYNCED' : row.status === 'CONFIGURED_UNVERIFIED' ? 'CONFIGURED UNVERIFIED' : row.live ? 'LIVE CONNECTED' : 'NOT CONFIGURED' };
   }
 
   private tenant(actor: SessionContext): string {
@@ -512,10 +514,80 @@ export class MailboxWebhookService {
 
 @Injectable()
 export class MailboxHealthService {
-  constructor(@Inject(MailboxConnectionService) private readonly connections: MailboxConnectionService) {}
+  constructor(
+    @Inject(MailboxConnectionService) private readonly connections: MailboxConnectionService,
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AppConfig) private readonly config: AppConfig,
+  ) {}
 
   status() {
-    return this.connections.health();
+    const ready = providerReadiness(this.config.env);
+    return { ...this.connections.health(), readiness: ready, realSync: 'NOT TESTED' as const };
+  }
+
+  overview(actor: SessionContext) {
+    return this.guard(operationsOverview(this.database.prisma, this.actor(actor)).then((counts) => {
+      const ready = providerReadiness(this.config.env);
+      return {
+        ...counts,
+        google: ready.google === 'NOT_CONFIGURED' ? 'LIVE GMAIL — NOT CONFIGURED' : ready.google,
+        microsoft: ready.microsoft === 'NOT_CONFIGURED' ? 'LIVE MICROSOFT — NOT CONFIGURED' : ready.microsoft,
+        realSync: counts.liveReadVerified ? 'REAL READ-ONLY SYNC — VERIFIED' : 'REAL READ-ONLY SYNC — NOT TESTED',
+        sending: 'SEND DISABLED',
+        captureHealth: 'CAPTURE',
+      };
+    }));
+  }
+
+  connectionsList(actor: SessionContext, query: MailboxListDto) {
+    return this.guard(listOperationalConnections(this.database.prisma, this.actor(actor), query));
+  }
+
+  connection(actor: SessionContext, id: string) {
+    return this.guard(operationalConnection(this.database.prisma, this.actor(actor), id).then((row) => {
+      if (!row) throw new ApiException(404, 'NOT_FOUND', 'Mailbox was not found');
+      return row;
+    }));
+  }
+
+  runs(actor: SessionContext, query: MailboxListDto) {
+    return this.guard(listSyncRuns(this.database.prisma, this.actor(actor), query));
+  }
+
+  errors(actor: SessionContext, query: MailboxListDto) {
+    return this.guard(listProviderErrors(this.database.prisma, this.actor(actor), query));
+  }
+
+  alerts(actor: SessionContext, query: MailboxListDto) {
+    return this.guard(listOperationalAlerts(this.database.prisma, this.actor(actor), query));
+  }
+
+  acknowledge(actor: SessionContext, id: string) {
+    return this.guard(acknowledgeOperationalAlert(this.database.prisma, this.actor(actor), id));
+  }
+
+  pause(actor: SessionContext, id: string, paused: boolean) {
+    return this.guard(setMailboxSyncPaused(this.database.prisma, this.actor(actor), id, paused));
+  }
+
+  recover(actor: SessionContext, id: string) {
+    return this.guard(recoverMailboxCursor(this.database.prisma, this.actor(actor), id));
+  }
+
+  private actor(actor: SessionContext) {
+    if (!actor.tenantId) throw new ApiException(409, 'ORGANIZATION_REQUIRED', 'Choose an organization');
+    return { tenantId: actor.tenantId, userId: actor.userId, key: decodeEncryptionKey(this.config.env.DATA_ENCRYPTION_KEY) };
+  }
+
+  private async guard<T>(value: Promise<T>): Promise<T> {
+    try {
+      return await value;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message === 'NOT_FOUND') throw new ApiException(404, 'NOT_FOUND', 'Mailbox was not found');
+      if (message === 'NOT_RECOVERABLE') throw new ApiException(409, 'NOT_RECOVERABLE', 'This mailbox is not ready for cursor recovery');
+      throw error;
+    }
   }
 }
 

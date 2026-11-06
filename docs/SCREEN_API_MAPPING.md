@@ -138,6 +138,12 @@ Signed-out inbox stays the simulated demonstration. Signed-in `/workspace/inbox`
 | Send-scope consent | `mailboxes/oauth/send-start` | `mailbox.send.request` |
 | Delivery | `delivery/list`, `delivery/reconcile` | `mailbox.read` |
 | Analysis run | `inbox-ai/run` | `mailbox.draft` |
+| Operations overview | `operations/overview` | `mailbox.operations.read` |
+| Operations mailboxes, runs, errors | `operations/connections`, `operations/get`, `operations/runs`, `operations/errors` | `mailbox.operations.read` |
+| Operational alerts | `operations/alerts` | `mailbox.health.read` |
+| Acknowledge an alert | `operations/alerts/acknowledge` | `mailbox.operations.manage` |
+| Pause or resume sync | `operations/pause` | `mailbox.operations.manage` |
+| Recover an expired cursor | `operations/recover-cursor` | `mailbox.sync.recover` |
 
 OAuth return is `GET /api/v1/mailbox/oauth/callback`. Capture webhooks are `POST /api/v1/mailbox/webhooks/capture`. The Inbox screen shows `SEND DISABLED`, `NOT CONFIGURED`, `READ ONLY`, and `MOCK / CAPTURE MODE`. It does not show `SEND NOW` while `email-sending/status` reports `sendNow: false`. A capture result is not labeled delivered. Read-only OAuth and send-scope OAuth are separate requests. Live send stays off unless the deployment flag, the tenant policy, and the mailbox switch are all on, and a person still has to call `email-send/run`.
 

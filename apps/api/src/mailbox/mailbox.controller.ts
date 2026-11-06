@@ -13,6 +13,7 @@ import {
   ImportMessagesDto,
   MailboxListDto,
   MailboxSendingDto,
+  SyncPauseDto,
   OauthStartDto,
   SendPolicyDto,
   ThreadAssignDto,
@@ -37,6 +38,33 @@ export class MailboxController {
 
   @Post('mailboxes/health') @HttpCode(200) @RequirePermissions('mailbox.read')
   mailboxHealth(@Req() request: AuthenticatedRequest) { return this.ok(this.health.status(), request.requestId); }
+
+  @Post('operations/overview') @HttpCode(200) @RequirePermissions('mailbox.operations.read')
+  overview(@Req() request: AuthenticatedRequest) { return this.ok(this.health.overview(request.auth!), request.requestId); }
+
+  @Post('operations/connections') @HttpCode(200) @RequirePermissions('mailbox.operations.read')
+  operationConnections(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.connectionsList(request.auth!, body), request.requestId); }
+
+  @Post('operations/get') @HttpCode(200) @RequirePermissions('mailbox.operations.read')
+  operation(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.connection(request.auth!, body.id), request.requestId); }
+
+  @Post('operations/runs') @HttpCode(200) @RequirePermissions('mailbox.operations.read')
+  runs(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.runs(request.auth!, body), request.requestId); }
+
+  @Post('operations/errors') @HttpCode(200) @RequirePermissions('mailbox.operations.read')
+  errors(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.errors(request.auth!, body), request.requestId); }
+
+  @Post('operations/alerts') @HttpCode(200) @RequirePermissions('mailbox.health.read')
+  alerts(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.alerts(request.auth!, body), request.requestId); }
+
+  @Post('operations/alerts/acknowledge') @HttpCode(200) @RequirePermissions('mailbox.operations.manage')
+  acknowledge(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.acknowledge(request.auth!, body.id), request.requestId); }
+
+  @Post('operations/pause') @HttpCode(200) @RequirePermissions('mailbox.operations.manage')
+  pause(@Body() body: SyncPauseDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.pause(request.auth!, body.id, body.paused), request.requestId); }
+
+  @Post('operations/recover-cursor') @HttpCode(200) @RequirePermissions('mailbox.sync.recover')
+  recover(@Body() body: IdDto, @Req() request: AuthenticatedRequest) { return this.ok(this.health.recover(request.auth!, body.id), request.requestId); }
 
   @Post('mailboxes/list') @HttpCode(200) @RequirePermissions('mailbox.read')
   list(@Body() body: MailboxListDto, @Req() request: AuthenticatedRequest) { return this.ok(this.connections.listConnections(request.auth!, body), request.requestId); }

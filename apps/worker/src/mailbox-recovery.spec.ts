@@ -90,6 +90,14 @@ describe.skipIf(!adminUrl || !workerUrl || !encryptionKey)('mailbox process reco
     }) as typeof fetch;
     const finished = await syncConnection(worker, { tenantId, userId, key: Buffer.from(encryptionKey as string, 'base64') }, connection.id, fetchImpl);
     expect(finished.imported).toBe(1);
+    const evidence = await admin.mailboxProviderVerification.findFirst({ where: { tenantId, connectionId: connection.id } });
+    expect(evidence?.origin).toBe('STUB_TESTED');
+    expect(evidence?.origin).not.toBe('REAL_READ_VERIFIED');
+    const stored = await admin.mailboxConnection.findUnique({ where: { tenantId_id: { tenantId, id: connection.id } } });
+    expect(stored?.healthState).toBe('LOCAL_TEST_HEALTHY');
+    expect(stored?.status).toBe('STUB_SYNCED');
+    expect(stored?.live).toBe(false);
+    expect(stored?.sendingEnabled).toBe(false);
     const again = await syncConnection(worker, { tenantId, userId, key: Buffer.from(encryptionKey as string, 'base64') }, connection.id, fetchImpl);
     expect(again.imported).toBe(0);
     expect(await messageCount(connection.id)).toBe(1);

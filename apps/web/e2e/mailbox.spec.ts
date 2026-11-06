@@ -43,6 +43,12 @@ test('signed-in inbox uses capture mail and does not claim a live send', async (
   await expect(page.getByText(/Hourly cap 20/)).toBeVisible();
   await expect(page.getByText(/Recipient limit 5/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'SEND NOW' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Operations', exact: true }).click();
+  await expect(page.getByText('LIVE GMAIL — NOT CONFIGURED')).toBeVisible();
+  await expect(page.getByText('LIVE MICROSOFT — NOT CONFIGURED')).toBeVisible();
+  await expect(page.getByText('REAL READ-ONLY SYNC — NOT TESTED')).toBeVisible();
+  await expect(page.getByText('Capture is not live-provider healthy')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'SEND NOW' })).toHaveCount(0);
   expect(page.url()).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 });
 

@@ -65,6 +65,11 @@ export const TENANT_TABLES = [
   'email_send_policies',
   'email_send_quotas',
   'email_send_reservations',
+  'mailbox_health_events',
+  'mailbox_sync_runs',
+  'mailbox_provider_errors',
+  'mailbox_operational_alerts',
+  'mailbox_provider_verifications',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

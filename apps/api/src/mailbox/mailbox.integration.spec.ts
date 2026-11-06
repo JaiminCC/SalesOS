@@ -57,6 +57,15 @@ describe.skipIf(!process.env.DATABASE_URL || !process.env.DATABASE_URL_APP)('mai
     const providers = await post('/api/v1/management/mailboxes/providers', ownerCookie, {});
     expect(providers.body.data.providers.find((item: { id: string }) => item.id === 'google').status).toBe('NOT_CONFIGURED');
     expect(providers.body.data.liveSend).toBe('NOT CONFIGURED');
+    expect(providers.body.data.readiness.google).toBe('NOT_CONFIGURED');
+    const overview = await post('/api/v1/management/operations/overview', ownerCookie, { origin: 'REAL_READ_VERIFIED', verified: true });
+    expect(overview.status).toBe(200);
+    expect(overview.body.data.google).toBe('LIVE GMAIL — NOT CONFIGURED');
+    expect(overview.body.data.microsoft).toBe('LIVE MICROSOFT — NOT CONFIGURED');
+    expect(overview.body.data.realSync).toBe('REAL READ-ONLY SYNC — NOT TESTED');
+    expect(overview.body.data.sending).toBe('SEND DISABLED');
+    expect(overview.body.data.liveReadVerified).toBe(0);
+    expect((await post('/api/v1/management/operations/overview', reviewerCookie, {})).status).toBe(403);
     const origin = (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',')[0]!.trim().replace(/\/$/, '');
     const sending = await post('/api/v1/management/email-sending/status', ownerCookie, {});
     expect(sending.body.data.deployment).toBe('SEND DISABLED');

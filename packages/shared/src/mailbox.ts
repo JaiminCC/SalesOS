@@ -251,6 +251,41 @@ export function sendScopeGranted(provider: string, scopes: string[]): boolean {
   return false;
 }
 
+export type ProviderReadiness = 'NOT_CONFIGURED' | 'CONFIGURED_UNVERIFIED' | 'CONFIGURATION_INVALID';
+
+export function providerReadiness(env: { GOOGLE_OAUTH_CLIENT_ID?: string; GOOGLE_OAUTH_CLIENT_SECRET?: string; MICROSOFT_OAUTH_CLIENT_ID?: string; MICROSOFT_OAUTH_CLIENT_SECRET?: string } = {}): { google: ProviderReadiness; microsoft: ProviderReadiness } {
+  return { google: readiness(env.GOOGLE_OAUTH_CLIENT_ID, env.GOOGLE_OAUTH_CLIENT_SECRET), microsoft: readiness(env.MICROSOFT_OAUTH_CLIENT_ID, env.MICROSOFT_OAUTH_CLIENT_SECRET) };
+}
+
+function readiness(id?: string, secret?: string): ProviderReadiness {
+  if (!id && !secret) return 'NOT_CONFIGURED';
+  if (!id || !secret || secret.length < 8) return 'CONFIGURATION_INVALID';
+  return 'CONFIGURED_UNVERIFIED';
+}
+
+export type MailboxErrorClass = { code: string; description: string; retryable: boolean; action: string; severity: 'info' | 'warning' | 'high' };
+
+export function classifyMailboxError(input: { httpStatus?: number | null; message?: string | null }): MailboxErrorClass {
+  const message = input.message ?? '';
+  const status = input.httpStatus ?? statusFrom(message);
+  if (status === 429 || /rate limited|^RATE_LIMIT$/i.test(message)) return { code: 'RATE_LIMIT', description: 'The provider asked the sync to slow down.', retryable: true, action: 'Wait for the next scheduled sync.', severity: 'warning' };
+  if (status === 401 || /TOKEN_REFRESH_FAILED|TOKEN_MISSING|REFRESH_MISSING|REFRESH_REVOKED/i.test(message)) return { code: 'AUTHENTICATION', description: 'The mailbox needs to be connected again.', retryable: false, action: 'Reauthorize the mailbox.', severity: 'high' };
+  if (status === 403 || /SCOPE_MISSING|SEND_SCOPE_PRESENT/i.test(message)) return { code: 'AUTHORIZATION', description: 'The granted access does not allow this read.', retryable: false, action: 'Review the mailbox permission.', severity: 'high' };
+  if (/IDENTITY_MISMATCH/i.test(message)) return { code: 'MAILBOX_IDENTITY', description: 'The provider account does not match this mailbox.', retryable: false, action: 'Disconnect and connect the intended mailbox.', severity: 'high' };
+  if (/CURSOR_RECOVERED|CURSOR_EXPIRED|SyncStateNotFound/i.test(message)) return { code: 'CURSOR_EXPIRED', description: 'The saved sync position expired.', retryable: true, action: 'Run cursor recovery, then sync again.', severity: 'warning' };
+  if (status === 408 || /timeout/i.test(message)) return { code: 'TIMEOUT', description: 'The provider did not answer in time.', retryable: true, action: 'Retry the read-only sync.', severity: 'warning' };
+  if ((status !== null && status >= 500) || /PROVIDER_UNAVAILABLE/i.test(message)) return { code: 'PROVIDER_UNAVAILABLE', description: 'The provider was unavailable.', retryable: true, action: 'Retry after the provider recovers.', severity: 'warning' };
+  if (/redirect|MALFORMED/i.test(message)) return { code: 'MALFORMED_RESPONSE', description: 'The provider response was not accepted.', retryable: false, action: 'Review the provider error.', severity: 'high' };
+  if (/suspended/i.test(message)) return { code: 'TENANT_SUSPENDED', description: 'The organization is suspended.', retryable: false, action: 'Restore the organization before syncing.', severity: 'high' };
+  if (/revoked|DISCONNECTED/i.test(message)) return { code: 'CONNECTION_REVOKED', description: 'The mailbox connection was revoked.', retryable: false, action: 'Reconnect the mailbox.', severity: 'high' };
+  return { code: 'PROVIDER_UNAVAILABLE', description: 'The sync did not finish.', retryable: true, action: 'Review the sync run and retry the read.', severity: 'warning' };
+}
+
+function statusFrom(message: string): number | null {
+  const match = /(?:failed with|status) (\d{3})/i.exec(message);
+  return match ? Number(match[1]) : null;
+}
+
 export function classifyIntent(text: string): { intent: string; urgent: boolean; objection: boolean; question: boolean } {
   const lower = text.toLowerCase();
   return {

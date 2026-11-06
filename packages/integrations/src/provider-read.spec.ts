@@ -52,5 +52,11 @@ describe('provider read adapters', () => {
       (async () => { throw new Error('should not fetch'); }) as typeof fetch,
     );
     expect(foreign.expiredCursor).toBe(true);
+    const unsafe = await readProviderPage(
+      { provider: 'microsoft', accessToken: 'token', cursor: { mode: 'delta', token: null, historyId: null } },
+      (async () => new Response(JSON.stringify({ value: [], '@odata.deltaLink': 'https://user:pass@graph.microsoft.com/v1.0/me/messages/delta' }), { status: 200 })) as typeof fetch,
+    );
+    expect(unsafe.expiredCursor).toBe(true);
+    expect(unsafe.nextCursor).toBeNull();
   });
 });

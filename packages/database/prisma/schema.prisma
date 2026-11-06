@@ -1146,6 +1146,8 @@ model MailboxConnection {
   sendingEnabled         Boolean   @default(false) @map("sending_enabled")
   sendCapability         String    @default("READ_ONLY") @map("send_capability")
   revocationVersion      Int       @default(0) @map("revocation_version")
+  healthState            String    @default("NOT_CONFIGURED") @map("health_state")
+  syncPaused             Boolean   @default(false) @map("sync_paused")
   live                   Boolean   @default(false)
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1434,6 +1436,107 @@ model MailboxSyncEvent {
 
   @@id([tenantId, id])
   @@map("mailbox_sync_events")
+}
+
+model MailboxHealthEvent {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId  String   @map("connection_id") @db.Uuid
+  provider      String
+  previousState String   @map("previous_state")
+  nextState     String   @map("next_state")
+  reason        String
+  traceId       String   @map("trace_id")
+  evidence      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_health_events")
+}
+
+model MailboxSyncRun {
+  tenantId          String    @map("tenant_id") @db.Uuid
+  id                String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId      String    @map("connection_id") @db.Uuid
+  provider          String
+  jobType           String    @map("job_type")
+  triggerSource     String    @map("trigger_source")
+  startedAt         DateTime  @map("started_at") @db.Timestamptz(6)
+  finishedAt        DateTime? @map("finished_at") @db.Timestamptz(6)
+  workerId          String    @map("worker_id")
+  leaseVersion      Int       @default(0) @map("lease_version")
+  pagesFetched      Int       @default(0) @map("pages_fetched")
+  insertedCount     Int       @default(0) @map("inserted_count")
+  updatedCount      Int       @default(0) @map("updated_count")
+  duplicatesSkipped Int       @default(0) @map("duplicates_skipped")
+  cursorBefore      String    @default("none") @map("cursor_before")
+  cursorAfter       String    @default("none") @map("cursor_after")
+  retryCount        Int       @default(0) @map("retry_count")
+  rateLimited       Boolean   @default(false) @map("rate_limited")
+  errorCode         String?   @map("error_code")
+  state             String
+  traceId           String    @map("trace_id")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_sync_runs")
+}
+
+model MailboxProviderError {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  provider     String
+  code         String
+  httpStatus   Int?     @map("http_status")
+  retryable    Boolean
+  severity     String
+  action       String
+  traceId      String   @map("trace_id")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_provider_errors")
+}
+
+model MailboxOperationalAlert {
+  tenantId         String    @map("tenant_id") @db.Uuid
+  id               String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId     String    @map("connection_id") @db.Uuid
+  code             String
+  severity         String
+  state            String    @default("OPEN")
+  dedupeKey        String    @map("dedupe_key")
+  traceId          String    @map("trace_id")
+  acknowledgedAt   DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  acknowledgedBy   String?   @map("acknowledged_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, dedupeKey])
+  @@map("mailbox_operational_alerts")
+}
+
+model MailboxProviderVerification {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  id              String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId    String   @map("connection_id") @db.Uuid
+  provider        String
+  origin          String
+  outcome         String
+  readScope       String   @default("unknown") @map("read_scope")
+  identityMatched Boolean  @default(false) @map("identity_matched")
+  pageCount       Int      @default(0) @map("page_count")
+  insertedCount   Int      @default(0) @map("inserted_count")
+  duplicateCount  Int      @default(0) @map("duplicate_count")
+  cursorChanged   Boolean  @default(false) @map("cursor_changed")
+  durationMs      Int      @default(0) @map("duration_ms")
+  traceId         String   @map("trace_id")
+  failureReason   String?  @map("failure_reason")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("mailbox_provider_verifications")
 }
 
 model MailboxWebhookReceipt {

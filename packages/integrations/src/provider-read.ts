@@ -128,7 +128,8 @@ async function readGraph(accessToken: string, cursor: ProviderCursor, fetchImpl:
   if (body.error?.code === 'SyncStateNotFound') return empty('delta', true);
   const messages = (body.value ?? []).slice(0, PAGE).map(graphMessage).filter((item) => item.providerMessageId);
   const next = body['@odata.nextLink'] ?? body['@odata.deltaLink'] ?? null;
-  return { messages, nextCursor: next && allowedGraphUrl(next) ? next : null, historyId: null, mode: 'delta', expiredCursor: false, rateLimited: false, retryAfterMs: null, mailboxAddress: profileBody.mail ?? null };
+  if (next && !allowedGraphUrl(next)) return empty('delta', true);
+  return { messages, nextCursor: next, historyId: null, mode: 'delta', expiredCursor: false, rateLimited: false, retryAfterMs: null, mailboxAddress: profileBody.mail ?? null };
 }
 
 function graphMessage(row: Record<string, unknown>): NormalizedMail {
@@ -183,7 +184,7 @@ function auth(token: string): { authorization: string } {
 function allowedGraphUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && url.hostname === 'graph.microsoft.com';
+    return url.protocol === 'https:' && url.hostname === 'graph.microsoft.com' && !url.username && !url.password && (!url.port || url.port === '443') && url.pathname.startsWith('/v1.0/');
   } catch {
     return false;
   }
