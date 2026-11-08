@@ -1,13 +1,13 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { createPrismaClient } from '@salesos/database';
-import { AGENT_RUN_JOB, CRM_DISCOVERY_JOB, CRM_IMPORT_JOB, CRM_QUALIFY_JOB, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_JOB, MAILBOX_SYNC_JOB, foundationQueueName, type AgentRunJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData } from '@salesos/shared';
+import { AGENT_RUN_JOB, CAMPAIGN_JOB_NAMES, CRM_DISCOVERY_JOB, CRM_IMPORT_JOB, CRM_QUALIFY_JOB, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_JOB, MAILBOX_SYNC_JOB, foundationQueueName, type AgentRunJobData, type CampaignJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData } from '@salesos/shared';
 import { parseWorkerEnv } from './env';
 import { readWorkerHealth } from './health';
 import { processAgentRunJob } from './agent-job';
 import { processKnowledgeJob, purgeDueKnowledge } from './knowledge';
 import { externalPorts } from './ports';
-import { markFinalFailure, processCrmJob, processFoundationPing, processMailboxJob, publishPendingOutbox, scheduleMailboxReads } from './processor';
+import { markFinalFailure, processCampaignWorkerJob, processCrmJob, processFoundationPing, processMailboxJob, publishPendingOutbox, scheduleCampaignWaits, scheduleMailboxReads } from './processor';
 
 async function main(): Promise<void> {
   const env = parseWorkerEnv(process.env);
@@ -22,14 +22,15 @@ async function main(): Promise<void> {
   queueConnection.on('error', () => undefined);
   workerConnection.on('error', () => undefined);
   const queueName = foundationQueueName(env.SALESOS_QUEUE_PREFIX);
-  const queue = new Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData>(queueName, { connection: queueConnection });
-  const worker = new Worker<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData>(
+  const queue = new Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData | CampaignJobData>(queueName, { connection: queueConnection });
+  const worker = new Worker<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData | CampaignJobData>(
     queueName,
     async (job) => {
       if (job.name === KNOWLEDGE_PROCESS_JOB) return processKnowledgeJob(job as Job<KnowledgeJobData>, prisma);
       if (job.name === AGENT_RUN_JOB) return processAgentRunJob(job as Job<AgentRunJobData>, prisma, env.DATA_ENCRYPTION_KEY);
       if (job.name === CRM_IMPORT_JOB || job.name === CRM_DISCOVERY_JOB || job.name === CRM_QUALIFY_JOB) return processCrmJob(job as Job<CrmJobData>, prisma, env.DATA_ENCRYPTION_KEY);
       if (job.name === MAILBOX_SYNC_JOB || job.name === MAILBOX_INCREMENTAL_JOB || job.name === MAILBOX_SEND_JOB || job.name === MAILBOX_RECONCILE_JOB) return processMailboxJob(job as Job<MailboxJobData>, prisma, env.DATA_ENCRYPTION_KEY);
+      if ((CAMPAIGN_JOB_NAMES as readonly string[]).includes(job.name)) return processCampaignWorkerJob(job as Job<CampaignJobData>, prisma);
       return processFoundationPing(job as Job<FoundationJobData>, prisma);
     },
     { connection: workerConnection, concurrency: 4 },
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
   const relayTimer = setInterval(() => void relay(), 2000);
   const healthTimer = setInterval(() => void report(), 15000);
   const mailboxTimer = setInterval(() => void scheduleMailboxReads(prisma, queue), 60_000);
+  const campaignTimer = setInterval(() => void scheduleCampaignWaits(prisma).catch(() => undefined), 60_000);
   await report();
   await relay();
   process.stdout.write(
@@ -84,6 +86,7 @@ async function main(): Promise<void> {
     clearInterval(relayTimer);
     clearInterval(healthTimer);
     clearInterval(mailboxTimer);
+    clearInterval(campaignTimer);
     await worker.close();
     await queue.close();
     queueConnection.disconnect();

@@ -94,8 +94,8 @@ export class RunCreateDto {
   goal?: string;
 
   @IsOptional()
-  @IsIn(['PRODUCT_RESEARCH', 'LEAD_RESEARCH_AND_QUALIFY', 'INBOX_ANALYZE_AND_DRAFT'])
-  planKind?: 'PRODUCT_RESEARCH' | 'LEAD_RESEARCH_AND_QUALIFY' | 'INBOX_ANALYZE_AND_DRAFT';
+  @IsIn(['PRODUCT_RESEARCH', 'LEAD_RESEARCH_AND_QUALIFY', 'INBOX_ANALYZE_AND_DRAFT', 'CAMPAIGN_PREPARE_AND_PERSONALIZE'])
+  planKind?: 'PRODUCT_RESEARCH' | 'LEAD_RESEARCH_AND_QUALIFY' | 'INBOX_ANALYZE_AND_DRAFT' | 'CAMPAIGN_PREPARE_AND_PERSONALIZE';
 
   @IsOptional()
   @IsUUID()
@@ -104,6 +104,10 @@ export class RunCreateDto {
   @IsOptional()
   @IsUUID()
   threadId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  campaignId?: string;
 }
 
 export class ModelCreateDto {

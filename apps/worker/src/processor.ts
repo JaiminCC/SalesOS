@@ -1,7 +1,7 @@
 import { Queue, UnrecoverableError, type Job } from 'bullmq';
-import { Prisma, decodeEncryptionKey, importCrmBatch, qualifyCrmLead, reconcileSend, runCrmDiscovery, sendDraft, syncConnection, withTenant, type PrismaClient } from '@salesos/database';
+import { Prisma, decodeEncryptionKey, importCrmBatch, processCampaignJob, qualifyCrmLead, reconcileSend, runCrmDiscovery, sendDraft, syncConnection, withTenant, type PrismaClient } from '@salesos/database';
 import { reconcileGmail, reconcileGraph, sendWithGmail, sendWithGraph } from '@salesos/integrations';
-import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_EVENT, MAILBOX_SEND_JOB, MAILBOX_SYNC_EVENT, MAILBOX_SYNC_JOB, foundationJobId, liveEmailSendEnabled, type AgentRunJobData, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData } from '@salesos/shared';
+import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CAMPAIGN_JOB_NAMES, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_EVENT, MAILBOX_SEND_JOB, MAILBOX_SYNC_EVENT, MAILBOX_SYNC_JOB, foundationJobId, liveEmailSendEnabled, type AgentRunJobData, type CampaignJobData, type CampaignJobName, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData } from '@salesos/shared';
 
 type PendingOutbox = {
   tenant_id: string;
@@ -15,7 +15,7 @@ export async function listPendingOutbox(prisma: PrismaClient): Promise<PendingOu
   return prisma.$queryRaw<PendingOutbox[]>(Prisma.sql`SELECT * FROM public.list_pending_outbox(25)`);
 }
 
-export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData>): Promise<number> {
+export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData | CampaignJobData>): Promise<number> {
   const pending = await listPendingOutbox(prisma);
   let published = 0;
   for (const row of pending) {
@@ -34,6 +34,11 @@ export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<Fo
       } else if (row.event_type === CRM_IMPORT_EVENT || row.event_type === CRM_DISCOVERY_EVENT || row.event_type === CRM_QUALIFY_EVENT) {
         const data: CrmJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
         const name = row.event_type === CRM_IMPORT_EVENT ? CRM_IMPORT_JOB : row.event_type === CRM_DISCOVERY_EVENT ? CRM_DISCOVERY_JOB : CRM_QUALIFY_JOB;
+        await queue.add(name, data, options);
+      } else if (row.event_type.startsWith('campaign.') && row.event_type.endsWith('.v1')) {
+        const name = row.event_type.slice(0, -3);
+        if (!(CAMPAIGN_JOB_NAMES as readonly string[]).includes(name)) continue;
+        const data: CampaignJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
         await queue.add(name, data, options);
       } else if (row.event_type === MAILBOX_SYNC_EVENT || row.event_type === MAILBOX_SEND_EVENT) {
         const data: MailboxJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
@@ -122,6 +127,31 @@ export async function processMailboxJob(job: Job<MailboxJobData>, prisma: Prisma
   }
   await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.updateMany({ where: { tenantId, id: job.data.outboxId, status: 'PENDING' }, data: { status: 'PROCESSED', processedAt: new Date() } }));
   return { done: true };
+}
+
+export async function processCampaignWorkerJob(job: Job<CampaignJobData>, prisma: PrismaClient): Promise<{ done: true }> {
+  const { tenantId, recordId, outboxId } = job.data;
+  const event = await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.findUnique({ where: { tenantId_id: { tenantId, id: outboxId } } }));
+  const payload = (event?.payload ?? {}) as { userId?: string };
+  const kind = (CAMPAIGN_JOB_NAMES as readonly string[]).includes(job.name) ? job.name as CampaignJobName : 'campaign.simulation.run';
+  await processCampaignJob(prisma, { tenantId, runId: recordId, userId: payload.userId ?? '', kind });
+  await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.updateMany({ where: { tenantId, id: outboxId, status: 'PENDING' }, data: { status: 'PROCESSED', processedAt: new Date() } }));
+  return { done: true };
+}
+
+export async function scheduleCampaignWaits(prisma: PrismaClient): Promise<number> {
+  const due = await prisma.$queryRaw<Array<{ tenant_id: string; run_id: string; actor_user_id: string }>>`SELECT tenant_id, run_id, actor_user_id FROM public.list_due_campaign_schedules()`;
+  let queued = 0;
+  for (const row of due) {
+    const created = await withTenant(prisma, row.tenant_id, async (tx) => {
+      const pending = await tx.outboxEvent.findFirst({ where: { tenantId: row.tenant_id, aggregateId: row.run_id, eventType: 'campaign.enrollment.advance.v1', status: 'PENDING' } });
+      if (pending) return false;
+      await tx.outboxEvent.create({ data: { tenantId: row.tenant_id, eventType: 'campaign.enrollment.advance.v1', aggregateId: row.run_id, payload: { userId: row.actor_user_id, kind: 'campaign.enrollment.advance' } } });
+      return true;
+    });
+    if (created) queued += 1;
+  }
+  return queued;
 }
 
 export async function scheduleMailboxReads(prisma: PrismaClient, queue: { add: (name: string, data: MailboxJobData, options: { jobId: string; removeOnComplete: number; removeOnFail: number }) => Promise<unknown> }): Promise<void> {

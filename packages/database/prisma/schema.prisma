@@ -1552,3 +1552,398 @@ model MailboxWebhookReceipt {
   @@unique([tenantId, provider, eventId])
   @@map("mailbox_webhook_receipts")
 }
+
+model AudienceSegment {
+  tenantId         String    @map("tenant_id") @db.Uuid
+  id               String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  description      String    @default("")
+  kind             String
+  ownerUserId      String?   @map("owner_user_id") @db.Uuid
+  currentVersionId String?   @map("current_version_id") @db.Uuid
+  revision         Int       @default(1)
+  createdBy        String    @map("created_by") @db.Uuid
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("audience_segments")
+}
+
+model AudienceSegmentVersion {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  segmentId     String   @map("segment_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  filter        Json
+  frozen        Boolean  @default(false)
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, segmentId, versionNumber])
+  @@map("audience_segment_versions")
+}
+
+model AudienceMember {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  segmentVersionId String   @map("segment_version_id") @db.Uuid
+  leadId           String   @map("lead_id") @db.Uuid
+  contactId        String?  @map("contact_id") @db.Uuid
+  identityKey      String?  @map("identity_key")
+  decision         String
+  reasons          Json     @default("[]")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, segmentVersionId, leadId])
+  @@map("audience_members")
+}
+
+model Campaign {
+  tenantId          String    @map("tenant_id") @db.Uuid
+  id                String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  description       String    @default("")
+  goal              String    @default("")
+  campaignType      String    @default("OUTREACH") @map("campaign_type")
+  productId         String?   @map("product_id") @db.Uuid
+  productVersionId  String?   @map("product_version_id") @db.Uuid
+  icpRef            String?   @map("icp_ref")
+  ownerUserId       String?   @map("owner_user_id") @db.Uuid
+  segmentId         String?   @map("segment_id") @db.Uuid
+  segmentVersionId  String?   @map("segment_version_id") @db.Uuid
+  sequenceId        String?   @map("sequence_id") @db.Uuid
+  sequenceVersionId String?   @map("sequence_version_id") @db.Uuid
+  channel           String    @default("EMAIL")
+  startsAt          DateTime? @map("starts_at") @db.Timestamptz(6)
+  endsAt            DateTime? @map("ends_at") @db.Timestamptz(6)
+  timeZone          String    @default("UTC") @map("time_zone")
+  state             String    @default("DRAFT")
+  approvalMode      String    @default("HUMAN") @map("approval_mode")
+  sendingStatus     String    @default("NOT_AUTHORIZED") @map("sending_status")
+  liveDelivery      Boolean   @default(false) @map("live_delivery")
+  revision          Int       @default(1)
+  createdBy         String    @map("created_by") @db.Uuid
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@index([tenantId, state, updatedAt])
+  @@map("campaigns")
+}
+
+model CampaignProduct {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId       String   @map("campaign_id") @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  productVersionId String   @map("product_version_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, campaignId, productVersionId])
+  @@map("campaign_products")
+}
+
+model CampaignAudience {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId       String   @map("campaign_id") @db.Uuid
+  segmentId        String   @map("segment_id") @db.Uuid
+  segmentVersionId String   @map("segment_version_id") @db.Uuid
+  createdBy        String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_audiences")
+}
+
+model CampaignExclusion {
+  tenantId    String   @map("tenant_id") @db.Uuid
+  id          String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId  String   @map("campaign_id") @db.Uuid
+  identityKey String?  @map("identity_key")
+  leadId      String?  @map("lead_id") @db.Uuid
+  reason      String
+  createdBy   String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_exclusions")
+}
+
+model CampaignSequence {
+  tenantId         String    @map("tenant_id") @db.Uuid
+  id               String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  currentVersionId String?   @map("current_version_id") @db.Uuid
+  revision         Int       @default(1)
+  createdBy        String    @map("created_by") @db.Uuid
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_sequences")
+}
+
+model CampaignSequenceVersion {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sequenceId       String   @map("sequence_id") @db.Uuid
+  versionNumber    Int      @map("version_number")
+  frozen           Boolean  @default(false)
+  productVersionId String?  @map("product_version_id") @db.Uuid
+  approvalRequired Boolean  @default(true) @map("approval_required")
+  timeZone         String   @default("UTC") @map("time_zone")
+  stopPolicy       Json     @default("{}") @map("stop_policy")
+  createdBy        String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, sequenceId, versionNumber])
+  @@map("campaign_sequence_versions")
+}
+
+model CampaignSequenceStep {
+  tenantId          String  @map("tenant_id") @db.Uuid
+  id                String  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sequenceVersionId String  @map("sequence_version_id") @db.Uuid
+  position          Int
+  stepType          String  @map("step_type")
+  config            Json    @default("{}")
+  templateVersionId String? @map("template_version_id") @db.Uuid
+
+  @@id([tenantId, id])
+  @@unique([tenantId, sequenceVersionId, position])
+  @@map("campaign_sequence_steps")
+}
+
+model CampaignSequenceCondition {
+  tenantId String @map("tenant_id") @db.Uuid
+  id       String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stepId   String @map("step_id") @db.Uuid
+  field    String
+  operator String
+  expected Json   @default("{}")
+
+  @@id([tenantId, id])
+  @@map("campaign_sequence_conditions")
+}
+
+model CampaignTemplate {
+  tenantId         String    @map("tenant_id") @db.Uuid
+  id               String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  productId        String?   @map("product_id") @db.Uuid
+  locale           String    @default("en")
+  currentVersionId String?   @map("current_version_id") @db.Uuid
+  revision         Int       @default(1)
+  createdBy        String    @map("created_by") @db.Uuid
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_templates")
+}
+
+model CampaignTemplateVersion {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId    String   @map("template_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  subject       String
+  bodyText      String   @map("body_text")
+  bodyHtml      String?  @map("body_html")
+  reviewState   String   @default("DRAFT") @map("review_state")
+  frozen        Boolean  @default(false)
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, templateId, versionNumber])
+  @@map("campaign_template_versions")
+}
+
+model CampaignEnrollment {
+  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId        String   @map("campaign_id") @db.Uuid
+  sequenceVersionId String   @map("sequence_version_id") @db.Uuid
+  segmentVersionId  String   @map("segment_version_id") @db.Uuid
+  productVersionId  String?  @map("product_version_id") @db.Uuid
+  icpRef            String?  @map("icp_ref")
+  leadId            String   @map("lead_id") @db.Uuid
+  contactId         String?  @map("contact_id") @db.Uuid
+  identityKey       String   @map("identity_key")
+  channel           String
+  status            String
+  decision          String
+  reasons           Json     @default("[]")
+  currentStep       Int      @default(0) @map("current_step")
+  revision          Int      @default(1)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, campaignId, channel, identityKey])
+  @@map("campaign_enrollments")
+}
+
+model CampaignStepExecution {
+  tenantId       String    @map("tenant_id") @db.Uuid
+  id             String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  enrollmentId   String    @map("enrollment_id") @db.Uuid
+  stepId         String    @map("step_id") @db.Uuid
+  position       Int
+  status         String
+  outcome        String
+  idempotencyKey String    @map("idempotency_key")
+  scheduledFor   DateTime? @map("scheduled_for") @db.Timestamptz(6)
+  startedAt      DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
+  detail         Json      @default("{}")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@map("campaign_step_executions")
+}
+
+model CampaignDraft {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId   String   @map("campaign_id") @db.Uuid
+  enrollmentId String?  @map("enrollment_id") @db.Uuid
+  stepId       String?  @map("step_id") @db.Uuid
+  contactId    String?  @map("contact_id") @db.Uuid
+  state        String
+  createdBy    String   @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_drafts")
+}
+
+model CampaignDraftVersion {
+  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftId           String   @map("draft_id") @db.Uuid
+  versionNumber     Int      @map("version_number")
+  subject           String
+  bodyText          String   @map("body_text")
+  bodyHtml          String?  @map("body_html")
+  facts             Json     @default("[]")
+  citations         Json     @default("[]")
+  modelProvider     String?  @map("model_provider")
+  modelName         String?  @map("model_name")
+  templateVersionId String?  @map("template_version_id") @db.Uuid
+  digest            String
+  editedBy          String?  @map("edited_by") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, draftId, versionNumber])
+  @@map("campaign_draft_versions")
+}
+
+model CampaignApproval {
+  tenantId    String    @map("tenant_id") @db.Uuid
+  id          String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind        String
+  subjectId   String    @map("subject_id") @db.Uuid
+  versionRef  String    @map("version_ref")
+  digest      String
+  state       String
+  requestedBy String    @map("requested_by") @db.Uuid
+  decidedBy   String?   @map("decided_by") @db.Uuid
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  decidedAt   DateTime? @map("decided_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_approvals")
+}
+
+model CampaignSchedule {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  id              String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId      String   @map("campaign_id") @db.Uuid
+  enrollmentId    String?  @map("enrollment_id") @db.Uuid
+  stepExecutionId String?  @map("step_execution_id") @db.Uuid
+  runAt           DateTime @map("run_at") @db.Timestamptz(6)
+  timeZone        String   @map("time_zone")
+  status          String
+  kind            String
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_schedules")
+}
+
+model CampaignRun {
+  tenantId          String    @map("tenant_id") @db.Uuid
+  id                String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId        String    @map("campaign_id") @db.Uuid
+  sequenceVersionId String?   @map("sequence_version_id") @db.Uuid
+  segmentVersionId  String?   @map("segment_version_id") @db.Uuid
+  state             String
+  traceId           String    @map("trace_id")
+  outcome           Json      @default("{}")
+  startedAt         DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt        DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdBy         String    @map("created_by") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_runs")
+}
+
+model CampaignPolicyEvaluation {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId   String   @map("campaign_id") @db.Uuid
+  enrollmentId String?  @map("enrollment_id") @db.Uuid
+  leadId       String?  @map("lead_id") @db.Uuid
+  decision     String
+  reasons      Json     @default("[]")
+  evidence     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_policy_evaluations")
+}
+
+model CampaignActivity {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  id         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId String   @map("campaign_id") @db.Uuid
+  action     String
+  actorId    String?  @map("actor_id") @db.Uuid
+  fromState  String?  @map("from_state")
+  toState    String?  @map("to_state")
+  detail     Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_activity")
+}
+
+model CampaignAnalyticsSnapshot {
+  tenantId    String   @map("tenant_id") @db.Uuid
+  id          String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId  String?  @map("campaign_id") @db.Uuid
+  windowStart DateTime @map("window_start") @db.Timestamptz(6)
+  windowEnd   DateTime @map("window_end") @db.Timestamptz(6)
+  metrics     Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("campaign_analytics_snapshots")
+}

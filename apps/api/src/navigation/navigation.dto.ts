@@ -27,6 +27,11 @@ export const NAVIGATION_TYPES = [
   'mailbox_connection',
   'mailbox_thread',
   'mailbox_draft',
+  'campaign',
+  'audience_segment',
+  'campaign_sequence',
+  'campaign_template',
+  'campaign_run',
 ] as const;
 
 export class CreateNavigationDto {

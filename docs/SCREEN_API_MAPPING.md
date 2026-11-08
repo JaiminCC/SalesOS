@@ -100,20 +100,29 @@ Signed out, this page remains the simulated demonstration. Signed in, it renders
 | Duplicate review and merge | `duplicates/list`, `duplicates/merge` | `crm.leads.read` or `crm.leads.merge` |
 | Contact windows | `contact-policies/get`, `contact-policies/update` | `crm.leads.read` or `crm.contact_policy.manage` |
 
-There is no campaign send endpoint. Campaigns, the qualification prototype, meetings, and WhatsApp stay simulated. The signed-in inbox is section 8.
+There is no campaign send endpoint. Meetings and WhatsApp stay simulated. Signed-in campaigns are section 7. The signed-in inbox is section 8.
 
 ## 7. Campaigns (`campaigns`)
 
-| Control | API |
-|---|---|
-| List cards | `GET /tenants/{tenantId}/campaigns` |
-| New campaign | `POST /tenants/{tenantId}/campaigns` |
-| Configure | `PATCH` with `If-Match` |
-| Activate / Pause | `POST /campaigns/{id}/activate` and `POST /campaigns/{id}/pause` |
+Signed-out campaigns stay the simulated demonstration. Signed-in `/workspace/campaigns` uses `CampaignsDesk`. Identifiers are in the JSON body, not the path. Navigation tokens hide database ids. External delivery stays not authorized. Sent, delivered, replies, meetings, and conversions render as `NOT AVAILABLE`.
 
-Activate returns 422 when the product version is unpublished, the mailbox is not `CONNECTED`, or the channel is not permitted. The prototype's Activate button flips a string. API mode must not.
-
-Phase 6, with product ids from Phase 3. Tests: AT-17 prohibited channel; daily cap stored; pause stops new sends and leaves the row `PAUSED`.
+| Control | API | Permission |
+|---|---|---|
+| List and open | `POST /api/v1/management/campaigns/list`, `campaigns/get` | `campaigns.read` |
+| Add and clone | `campaigns/create`, `campaigns/clone` | `campaigns.create` |
+| Edit and transition | `campaigns/update`, `campaigns/transition` | `campaigns.edit` |
+| Archive | `campaigns/archive` | `campaigns.archive` |
+| Segments | `segments/list`, `segments/get`, `segments/preview` | `campaigns.read` |
+| Save a segment | `segments/create`, `segments/update`, `segments/clone`, `segments/materialize` | `campaigns.audience.manage` |
+| Assign an audience | `campaign-audiences/assign` | `campaigns.audience.manage` |
+| Sequences | `sequences/list`, `sequences/get` | `campaigns.read` |
+| Save and publish a sequence | `sequences/create`, `sequences/steps`, `sequences/freeze`, `sequences/assign` | `campaigns.sequence.manage` |
+| Templates | `campaign-templates/list`, `campaign-templates/get`, `campaign-templates/create` | `campaigns.read` or `campaigns.template.manage` |
+| Request review | `campaign-approvals/request` | `campaigns.edit` |
+| Decide review | `campaign-approvals/decide` | `campaigns.review` |
+| Personalize, start, advance | `campaign-simulation/personalize`, `campaign-simulation/start`, `campaign-simulation/advance` | `campaigns.simulate` |
+| Execution monitor | `campaign-simulation/monitor` | `campaigns.read` |
+| Analytics | `campaign-analytics/summary` | `campaigns.analytics.read` |
 
 ## 8. AI Inbox (`inbox`)
 

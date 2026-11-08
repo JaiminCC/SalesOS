@@ -902,4 +902,10 @@ Live mailbox sync remains not tested. Live sending remains not authorized.
 
 Sprint 8 adds the Communication Operations foundation: provider readiness, durable connection health, sync-run history, in-app alerts, and read-only recovery. The requirement map is `docs/SPRINT_8_IMPLEMENTATION_PLAN.md`. Completion and the live-read decision are in `docs/SPRINT_8_COMPLETION.md` and `docs/SPRINT_8_FINAL_ACCEPTANCE.md`.
 
-LIVE GMAIL — NOT CONFIGURED. LIVE MICROSOFT — NOT CONFIGURED. REAL READ-ONLY SYNC — NOT TESTED. Live sending remains not authorized. Sprint 9 has not started.
+LIVE GMAIL — NOT CONFIGURED. LIVE MICROSOFT — NOT CONFIGURED. REAL READ-ONLY SYNC — NOT TESTED. Live sending remains not authorized.
+
+## Sprint 9 status
+
+Sprint 9 replaces the signed-in campaign demonstration with PostgreSQL-backed preparation. The requirement map is `docs/SPRINT_9_IMPLEMENTATION_PLAN.md`. Completion, security review, and test evidence are in `docs/SPRINT_9_COMPLETION.md`, `docs/SPRINT_9_SECURITY_REVIEW.md`, and `docs/SPRINT_9_TEST_RESULTS.md`.
+
+External campaign delivery remains not authorized. A campaign may be `APPROVED` or `COMPLETED_SIMULATION` without being sent. Sprint 10 has not started.

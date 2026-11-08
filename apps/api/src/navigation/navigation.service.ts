@@ -40,6 +40,11 @@ const READ_PERMISSION: Record<string, string | null> = {
   mailbox_connection: 'mailbox.read',
   mailbox_thread: 'mailbox.read',
   mailbox_draft: 'mailbox.read',
+  campaign: 'campaigns.read',
+  audience_segment: 'campaigns.read',
+  campaign_sequence: 'campaigns.read',
+  campaign_template: 'campaigns.read',
+  campaign_run: 'campaigns.read',
 };
 
 @Injectable()
@@ -190,6 +195,11 @@ export class NavigationService {
     if (input.resourceType === 'mailbox_connection') await this.visibleCrm(actor, 'mailboxConnection', input.resourceId!);
     if (input.resourceType === 'mailbox_thread') await this.visibleCrm(actor, 'mailboxThread', input.resourceId!);
     if (input.resourceType === 'mailbox_draft') await this.visibleCrm(actor, 'mailboxDraft', input.resourceId!);
+    if (input.resourceType === 'campaign') await this.visibleCrm(actor, 'campaign', input.resourceId!);
+    if (input.resourceType === 'audience_segment') await this.visibleCrm(actor, 'audienceSegment', input.resourceId!);
+    if (input.resourceType === 'campaign_sequence') await this.visibleCrm(actor, 'campaignSequence', input.resourceId!);
+    if (input.resourceType === 'campaign_template') await this.visibleCrm(actor, 'campaignTemplate', input.resourceId!);
+    if (input.resourceType === 'campaign_run') await this.visibleCrm(actor, 'campaignRun', input.resourceId!);
   }
 
   private async visibleMember(actor: SessionContext, userId: string): Promise<void> {
@@ -213,7 +223,7 @@ export class NavigationService {
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Session was not found');
   }
 
-  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate' | 'mailboxConnection' | 'mailboxThread' | 'mailboxDraft', id: string): Promise<void> {
+  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate' | 'mailboxConnection' | 'mailboxThread' | 'mailboxDraft' | 'campaign' | 'audienceSegment' | 'campaignSequence' | 'campaignTemplate' | 'campaignRun', id: string): Promise<void> {
     const tenantId = this.tenant(actor);
     const row = await withTenant(this.database.prisma, tenantId, (tx) => (tx[model] as { findUnique: (input: unknown) => Promise<unknown> }).findUnique({ where: { tenantId_id: { tenantId, id } } }));
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Record was not found');
@@ -257,6 +267,11 @@ function writePermission(resourceType: string, action: string): string | null {
   if (resourceType === 'crm_policy') return 'crm.contact_policy.manage';
   if (resourceType === 'mailbox_connection') return 'mailbox.connect';
   if (resourceType === 'mailbox_thread' || resourceType === 'mailbox_draft') return 'mailbox.draft';
+  if (resourceType === 'campaign') return 'campaigns.edit';
+  if (resourceType === 'audience_segment') return 'campaigns.audience.manage';
+  if (resourceType === 'campaign_sequence') return 'campaigns.sequence.manage';
+  if (resourceType === 'campaign_template') return 'campaigns.template.manage';
+  if (resourceType === 'campaign_run') return 'campaigns.simulate';
   return 'settings.manage';
 }
 

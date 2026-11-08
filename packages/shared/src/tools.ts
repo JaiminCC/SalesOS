@@ -4,7 +4,7 @@ export type ToolDefinition = {
   name: string;
   version: string;
   description: string;
-  permission: 'products.read' | 'agents.read' | 'agents.manage' | 'mailbox.read' | 'mailbox.draft';
+  permission: 'products.read' | 'agents.read' | 'agents.manage' | 'mailbox.read' | 'mailbox.draft' | 'campaigns.read' | 'campaigns.simulate' | 'campaigns.review';
   risk: ToolRisk;
   approval: 'none' | 'required';
   timeoutMs: number;
@@ -232,6 +232,16 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   'inbox.reply.propose': tool('inbox.reply.propose', 'Propose reply text. It is not permission to send.', 'mailbox.draft', true),
   'inbox.draft.create': tool('inbox.draft.create', 'Store an editable draft. It does not send.', 'mailbox.draft', false),
   'inbox.eligibility.evaluate': tool('inbox.eligibility.evaluate', 'Evaluate contact eligibility. Unknown does not allow sending.', 'mailbox.read', false),
+  'campaign.context.read': campaignTool('campaign.context.read', 'Read one campaign without authorizing delivery.', 'campaigns.read', false),
+  'campaign.audience.read': campaignTool('campaign.audience.read', 'Read a saved segment version.', 'campaigns.read', false),
+  'campaign.segment.evaluate': campaignTool('campaign.segment.evaluate', 'Evaluate a bounded segment. A match is not permission to contact.', 'campaigns.read', false),
+  'campaign.lead.context.read': campaignTool('campaign.lead.context.read', 'Read verified lead attributes for one candidate.', 'campaigns.read', false),
+  'campaign.product.context.read': campaignTool('campaign.product.context.read', 'Read the pinned published product version.', 'campaigns.read', false),
+  'campaign.knowledge.search': campaignTool('campaign.knowledge.search', 'Read approved knowledge already pinned to the run.', 'campaigns.read', false),
+  'campaign.message.personalize': campaignTool('campaign.message.personalize', 'Draft recipient text from recorded facts. It does not send.', 'campaigns.simulate', true),
+  'campaign.message.validate': campaignTool('campaign.message.validate', 'Reject invented facts and keep the safe template.', 'campaigns.simulate', false),
+  'campaign.sequence.preview': campaignTool('campaign.sequence.preview', 'Preview the next internal simulation step.', 'campaigns.read', false),
+  'campaign.approval.propose': campaignTool('campaign.approval.propose', 'Request human review. Approval does not send.', 'campaigns.review', false),
   'action.proposal.create': {
     name: 'action.proposal.create',
     version: '1',
@@ -308,6 +318,22 @@ export function buildInboxPlan(): PlanStep[] {
     'inbox.draft.create',
     'inbox.eligibility.evaluate',
   ].map((tool) => ({ tool, version: '1' }));
+}
+
+function campaignTool(name: string, description: string, permission: 'campaigns.read' | 'campaigns.simulate' | 'campaigns.review', usesModel: boolean): ToolDefinition {
+  return {
+    name,
+    version: '1',
+    description,
+    permission,
+    risk: usesModel ? 'MEDIUM' : 'LOW',
+    approval: name === 'campaign.approval.propose' ? 'required' : 'none',
+    timeoutMs: usesModel ? 180000 : 1000,
+    retries: usesModel ? 1 : 0,
+    idempotent: true,
+    usesModel,
+    external: false,
+  };
 }
 
 function tool(name: string, description: string, permission: 'mailbox.read' | 'mailbox.draft', usesModel: boolean): ToolDefinition {

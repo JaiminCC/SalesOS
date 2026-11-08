@@ -12,6 +12,8 @@ import { OrganizationsController } from './identity/organizations.controller';
 import { JobsController } from './jobs/jobs.controller';
 import { AgentsController } from './agents/agents.controller';
 import { AgentsService } from './agents/agents.service';
+import { CampaignController } from './campaigns/campaign.controller';
+import { CampaignService } from './campaigns/campaign.service';
 import { CrmController } from './crm/crm.controller';
 import { CrmService } from './crm/crm.service';
 import { MailboxController, MailboxOauthController } from './mailbox/mailbox.controller';
@@ -26,8 +28,8 @@ import { FoundationQueue } from './jobs/queue.provider';
 import { RedisService } from './redis/redis.service';
 
 @Module({
-  controllers: [HealthProbeController, HealthController, JobsController, AuthController, OrganizationsController, ProductsController, ProductDefaultsController, NavigationController, ManagementController, AgentsController, CrmController, MailboxController, MailboxOauthController],
-  providers: [AppConfig, DatabaseService, RedisService, HealthService, FoundationQueue, JobsService, IdentityDatabase, IdentityService, CsrfMiddleware, ProductsService, NavigationService, AgentsService, CrmService, MailboxConnectionService, MailboxSyncService, MailboxMessageService, MailboxSendService, MailboxWebhookService, MailboxHealthService],
+  controllers: [HealthProbeController, HealthController, JobsController, AuthController, OrganizationsController, ProductsController, ProductDefaultsController, NavigationController, ManagementController, AgentsController, CrmController, MailboxController, MailboxOauthController, CampaignController],
+  providers: [AppConfig, DatabaseService, RedisService, HealthService, FoundationQueue, JobsService, IdentityDatabase, IdentityService, CsrfMiddleware, ProductsService, NavigationService, AgentsService, CrmService, MailboxConnectionService, MailboxSyncService, MailboxMessageService, MailboxSendService, MailboxWebhookService, MailboxHealthService, CampaignService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

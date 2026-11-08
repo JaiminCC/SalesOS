@@ -65,3 +65,20 @@ export type MailboxJobData = {
   recordId: string;
   outboxId: string;
 };
+
+export const CAMPAIGN_AUDIENCE_JOB = 'campaign.audience.evaluate';
+export const CAMPAIGN_SEGMENT_JOB = 'campaign.segment.materialize';
+export const CAMPAIGN_SEQUENCE_JOB = 'campaign.sequence.prepare';
+export const CAMPAIGN_ENROLLMENT_JOB = 'campaign.enrollment.advance';
+export const CAMPAIGN_DRAFT_JOB = 'campaign.draft.personalize';
+export const CAMPAIGN_APPROVAL_JOB = 'campaign.approval.request';
+export const CAMPAIGN_SIMULATION_JOB = 'campaign.simulation.run';
+export const CAMPAIGN_ANALYTICS_JOB = 'campaign.analytics.aggregate';
+export const CAMPAIGN_JOB_NAMES = [CAMPAIGN_AUDIENCE_JOB, CAMPAIGN_SEGMENT_JOB, CAMPAIGN_SEQUENCE_JOB, CAMPAIGN_ENROLLMENT_JOB, CAMPAIGN_DRAFT_JOB, CAMPAIGN_APPROVAL_JOB, CAMPAIGN_SIMULATION_JOB, CAMPAIGN_ANALYTICS_JOB] as const;
+export type CampaignJobName = (typeof CAMPAIGN_JOB_NAMES)[number];
+
+export type CampaignJobData = {
+  tenantId: string;
+  recordId: string;
+  outboxId: string;
+};
