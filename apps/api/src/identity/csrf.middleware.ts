@@ -11,6 +11,11 @@ export class CsrfMiddleware implements NestMiddleware {
 
   use(request: RequestWithId, response: Response, next: NextFunction): void {
     const method = request.method.toUpperCase();
+    const path = request.path;
+    if (path === '/api/v1/webhooks/whatsapp') {
+      next();
+      return;
+    }
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || !readSessionCookie(request.headers.cookie)) {
       next();
       return;

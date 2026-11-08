@@ -45,6 +45,10 @@ const READ_PERMISSION: Record<string, string | null> = {
   campaign_sequence: 'campaigns.read',
   campaign_template: 'campaigns.read',
   campaign_run: 'campaigns.read',
+  whatsapp_connection: 'whatsapp.connections.read',
+  whatsapp_conversation: 'whatsapp.conversations.read',
+  whatsapp_template: 'whatsapp.templates.read',
+  whatsapp_draft: 'whatsapp.drafts.review',
 };
 
 @Injectable()
@@ -200,6 +204,10 @@ export class NavigationService {
     if (input.resourceType === 'campaign_sequence') await this.visibleCrm(actor, 'campaignSequence', input.resourceId!);
     if (input.resourceType === 'campaign_template') await this.visibleCrm(actor, 'campaignTemplate', input.resourceId!);
     if (input.resourceType === 'campaign_run') await this.visibleCrm(actor, 'campaignRun', input.resourceId!);
+    if (input.resourceType === 'whatsapp_connection') await this.visibleCrm(actor, 'whatsappConnection', input.resourceId!);
+    if (input.resourceType === 'whatsapp_conversation') await this.visibleCrm(actor, 'whatsappConversation', input.resourceId!);
+    if (input.resourceType === 'whatsapp_template') await this.visibleCrm(actor, 'whatsappTemplate', input.resourceId!);
+    if (input.resourceType === 'whatsapp_draft') await this.visibleCrm(actor, 'whatsappDraft', input.resourceId!);
   }
 
   private async visibleMember(actor: SessionContext, userId: string): Promise<void> {
@@ -223,7 +231,7 @@ export class NavigationService {
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Session was not found');
   }
 
-  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate' | 'mailboxConnection' | 'mailboxThread' | 'mailboxDraft' | 'campaign' | 'audienceSegment' | 'campaignSequence' | 'campaignTemplate' | 'campaignRun', id: string): Promise<void> {
+  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate' | 'mailboxConnection' | 'mailboxThread' | 'mailboxDraft' | 'campaign' | 'audienceSegment' | 'campaignSequence' | 'campaignTemplate' | 'campaignRun' | 'whatsappConnection' | 'whatsappConversation' | 'whatsappTemplate' | 'whatsappDraft', id: string): Promise<void> {
     const tenantId = this.tenant(actor);
     const row = await withTenant(this.database.prisma, tenantId, (tx) => (tx[model] as { findUnique: (input: unknown) => Promise<unknown> }).findUnique({ where: { tenantId_id: { tenantId, id } } }));
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Record was not found');
@@ -272,6 +280,10 @@ function writePermission(resourceType: string, action: string): string | null {
   if (resourceType === 'campaign_sequence') return 'campaigns.sequence.manage';
   if (resourceType === 'campaign_template') return 'campaigns.template.manage';
   if (resourceType === 'campaign_run') return 'campaigns.simulate';
+  if (resourceType === 'whatsapp_connection') return 'whatsapp.connections.manage';
+  if (resourceType === 'whatsapp_conversation') return 'whatsapp.conversations.manage';
+  if (resourceType === 'whatsapp_template') return 'whatsapp.templates.manage';
+  if (resourceType === 'whatsapp_draft') return 'whatsapp.drafts.review';
   return 'settings.manage';
 }
 

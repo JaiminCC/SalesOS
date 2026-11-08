@@ -908,4 +908,8 @@ LIVE GMAIL — NOT CONFIGURED. LIVE MICROSOFT — NOT CONFIGURED. REAL READ-ONLY
 
 Sprint 9 replaces the signed-in campaign demonstration with PostgreSQL-backed preparation. The requirement map is `docs/SPRINT_9_IMPLEMENTATION_PLAN.md`. Completion, security review, and test evidence are in `docs/SPRINT_9_COMPLETION.md`, `docs/SPRINT_9_SECURITY_REVIEW.md`, and `docs/SPRINT_9_TEST_RESULTS.md`.
 
-External campaign delivery remains not authorized. A campaign may be `APPROVED` or `COMPLETED_SIMULATION` without being sent. Sprint 10 has not started.
+External campaign delivery remains not authorized. A campaign may be `APPROVED` or `COMPLETED_SIMULATION` without being sent.
+
+## Sprint 10 status
+
+Sprint 10 adds a multi-tenant WhatsApp Business foundation. The requirement map is `docs/SPRINT_10_IMPLEMENTATION_PLAN.md`. Live Meta connectivity is **NOT CONFIGURED**. Real provider webhooks are **NOT TESTED**. Live WhatsApp sending is **NOT AUTHORIZED**. Local signed fixtures are **STUB_TESTED**. Sprint 11 has not started.

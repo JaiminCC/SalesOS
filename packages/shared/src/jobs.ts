@@ -82,3 +82,21 @@ export type CampaignJobData = {
   recordId: string;
   outboxId: string;
 };
+
+export const WHATSAPP_WEBHOOK_JOB = 'whatsapp.webhook.process';
+export const WHATSAPP_CONVERSATION_JOB = 'whatsapp.conversation.resolve';
+export const WHATSAPP_CONTACT_JOB = 'whatsapp.contact.link';
+export const WHATSAPP_ANALYZE_JOB = 'whatsapp.ai.analyze';
+export const WHATSAPP_DRAFT_JOB = 'whatsapp.draft.prepare';
+export const WHATSAPP_TEMPLATE_JOB = 'whatsapp.template.validate';
+export const WHATSAPP_STATUS_JOB = 'whatsapp.status.correlate';
+export const WHATSAPP_HEALTH_JOB = 'whatsapp.health.evaluate';
+export const WHATSAPP_ALERT_JOB = 'whatsapp.alert.evaluate';
+export const WHATSAPP_JOB_NAMES = [WHATSAPP_WEBHOOK_JOB, WHATSAPP_CONVERSATION_JOB, WHATSAPP_CONTACT_JOB, WHATSAPP_ANALYZE_JOB, WHATSAPP_DRAFT_JOB, WHATSAPP_TEMPLATE_JOB, WHATSAPP_STATUS_JOB, WHATSAPP_HEALTH_JOB, WHATSAPP_ALERT_JOB] as const;
+export type WhatsAppJobName = (typeof WHATSAPP_JOB_NAMES)[number];
+
+export type WhatsAppJobData = {
+  tenantId: string;
+  recordId: string;
+  outboxId: string;
+};

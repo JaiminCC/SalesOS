@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createModelClient, generateTaskResult, type JsonSchema } from '@salesos/agent-core';
 import { ContextError, Prisma, advanceAgentRun, decodeEncryptionKey, encryptField, loadPublishedContext, readModelSelection, withTenant } from '@salesos/database';
-import { AGENT_RUN_EVENT, DEFAULT_RUN_LIMITS, buildCampaignPlan, buildInboxPlan, buildLeadResearchPlan, buildSupervisorPlan, decide, redactValue, textHasCommercialCommitment, validatePlan } from '@salesos/shared';
+import { AGENT_RUN_EVENT, DEFAULT_RUN_LIMITS, buildCampaignPlan, buildInboxPlan, buildLeadResearchPlan, buildSupervisorPlan, buildWhatsAppPlan, decide, redactValue, textHasCommercialCommitment, validatePlan } from '@salesos/shared';
 import { ApiException } from '../common/api.exception';
 import { runBatch } from '../common/batch';
 import { AppConfig } from '../config/app-config';
@@ -103,7 +103,8 @@ export class AgentsService {
     const leadResearch = input.planKind === 'LEAD_RESEARCH_AND_QUALIFY';
     const inbox = input.planKind === 'INBOX_ANALYZE_AND_DRAFT';
     const campaign = input.planKind === 'CAMPAIGN_PREPARE_AND_PERSONALIZE';
-    this.require(actor, campaign ? 'campaigns.simulate' : inbox ? 'mailbox.draft' : leadResearch ? 'crm.leads.qualify' : 'agents.manage');
+    const whatsapp = input.planKind === 'WHATSAPP_ANALYZE_AND_DRAFT';
+    this.require(actor, whatsapp ? 'whatsapp.drafts.create' : campaign ? 'campaigns.simulate' : inbox ? 'mailbox.draft' : leadResearch ? 'crm.leads.qualify' : 'agents.manage');
     const tenantId = this.tenant(actor);
     if (!input.goal?.trim() || !input.productId) throw new ApiException(422, 'MODEL_REQUIRED', 'A goal and a published product are required');
     const created = await withTenant(this.database.prisma, tenantId, async (tx) => {
@@ -124,6 +125,11 @@ export class AgentsService {
       if (leadResearch && !input.leadId) throw new ApiException(422, 'VALIDATION_ERROR', 'A lead is required');
       if (inbox && !input.threadId) throw new ApiException(422, 'VALIDATION_ERROR', 'A thread is required');
       if (campaign && (!input.campaignId || !input.leadId)) throw new ApiException(422, 'VALIDATION_ERROR', 'A campaign and a lead are required');
+      if (whatsapp && !input.conversationId) throw new ApiException(422, 'VALIDATION_ERROR', 'A WhatsApp conversation is required');
+      if (whatsapp && input.conversationId) {
+        const row = await tx.whatsappConversation.findUnique({ where: { tenantId_id: { tenantId, id: input.conversationId } } });
+        if (!row) throw new ApiException(404, 'NOT_FOUND', 'Conversation was not found');
+      }
       if (campaign && input.campaignId) {
         const row = await tx.campaign.findUnique({ where: { tenantId_id: { tenantId, id: input.campaignId } } });
         if (!row || row.archivedAt) throw new ApiException(404, 'NOT_FOUND', 'Campaign was not found');
@@ -133,7 +139,7 @@ export class AgentsService {
         if (!lead || lead.archivedAt) throw new ApiException(404, 'NOT_FOUND', 'Lead was not found');
         if (lead.productId && lead.productId !== pinned.context.productId) throw new ApiException(409, 'CONFLICT', 'The lead is pinned to a different product');
       }
-      const plan = campaign ? buildCampaignPlan() : inbox ? buildInboxPlan() : leadResearch ? buildLeadResearchPlan() : buildSupervisorPlan(input.goal!.trim());
+      const plan = whatsapp ? buildWhatsAppPlan() : campaign ? buildCampaignPlan() : inbox ? buildInboxPlan() : leadResearch ? buildLeadResearchPlan() : buildSupervisorPlan(input.goal!.trim());
       const invalid = validatePlan(plan);
       if (invalid) throw new ApiException(400, 'INVALID_PLAN', invalid);
       const run = await tx.agentRun.create({
@@ -151,7 +157,7 @@ export class AgentsService {
           contextSnapshot: pinned.context as Prisma.InputJsonValue,
           citations: pinned.context.citations as Prisma.InputJsonValue,
           plan: plan as Prisma.InputJsonValue,
-          constraints: ((campaign || inbox || leadResearch) ? { ...DEFAULT_RUN_LIMITS, maxToolCalls: 12, mailboxThreadId: input.threadId, campaignId: input.campaignId } : DEFAULT_RUN_LIMITS) as Prisma.InputJsonValue,
+          constraints: ((campaign || inbox || leadResearch || whatsapp) ? { ...DEFAULT_RUN_LIMITS, maxToolCalls: 12, mailboxThreadId: input.threadId, campaignId: input.campaignId, whatsappConversationId: input.conversationId } : DEFAULT_RUN_LIMITS) as Prisma.InputJsonValue,
           createdBy: actor.userId,
           inputRedacted: redactValue({ triggerType: input.triggerType, planKind: input.planKind ?? 'PRODUCT_RESEARCH', agent: agent.name, goal: input.goal }) as Prisma.InputJsonValue,
         },

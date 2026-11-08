@@ -4,7 +4,7 @@ export type ToolDefinition = {
   name: string;
   version: string;
   description: string;
-  permission: 'products.read' | 'agents.read' | 'agents.manage' | 'mailbox.read' | 'mailbox.draft' | 'campaigns.read' | 'campaigns.simulate' | 'campaigns.review';
+  permission: 'products.read' | 'agents.read' | 'agents.manage' | 'mailbox.read' | 'mailbox.draft' | 'campaigns.read' | 'campaigns.simulate' | 'campaigns.review' | 'whatsapp.conversations.read' | 'whatsapp.drafts.create';
   risk: ToolRisk;
   approval: 'none' | 'required';
   timeoutMs: number;
@@ -242,6 +242,16 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   'campaign.message.validate': campaignTool('campaign.message.validate', 'Reject invented facts and keep the safe template.', 'campaigns.simulate', false),
   'campaign.sequence.preview': campaignTool('campaign.sequence.preview', 'Preview the next internal simulation step.', 'campaigns.read', false),
   'campaign.approval.propose': campaignTool('campaign.approval.propose', 'Request human review. Approval does not send.', 'campaigns.review', false),
+  'whatsapp.conversation.read': whatsappTool('whatsapp.conversation.read', 'Read one WhatsApp conversation. It does not send.', 'whatsapp.conversations.read', false),
+  'whatsapp.contact.context.read': whatsappTool('whatsapp.contact.context.read', 'Read the linked contact. It does not send.', 'whatsapp.conversations.read', false),
+  'whatsapp.lead.context.read': whatsappTool('whatsapp.lead.context.read', 'Read the linked lead. It does not send.', 'whatsapp.conversations.read', false),
+  'whatsapp.product.context.read': whatsappTool('whatsapp.product.context.read', 'Read the pinned product. It does not send.', 'whatsapp.conversations.read', false),
+  'whatsapp.knowledge.search': whatsappTool('whatsapp.knowledge.search', 'Read approved knowledge already pinned to the run.', 'whatsapp.conversations.read', false),
+  'whatsapp.intent.classify': whatsappTool('whatsapp.intent.classify', 'Classify inbound intent as a prediction, not a fact.', 'whatsapp.drafts.create', true),
+  'whatsapp.reply.propose': whatsappTool('whatsapp.reply.propose', 'Propose a reply for a person to review. It does not send.', 'whatsapp.drafts.create', true),
+  'whatsapp.qualification.propose': whatsappTool('whatsapp.qualification.propose', 'Propose qualification notes. It does not change CRM stage.', 'whatsapp.drafts.create', false),
+  'whatsapp.handoff.propose': whatsappTool('whatsapp.handoff.propose', 'Propose a human handoff. It does not assign or send.', 'whatsapp.drafts.create', false),
+  'whatsapp.draft.validate': whatsappTool('whatsapp.draft.validate', 'Keep a safe internal draft. It does not send.', 'whatsapp.drafts.create', false),
   'action.proposal.create': {
     name: 'action.proposal.create',
     version: '1',
@@ -306,6 +316,23 @@ export function buildLeadResearchPlan(): PlanStep[] {
 
 export const INBOX_ANALYZE_PLAN = 'INBOX_ANALYZE_AND_DRAFT';
 
+export const WHATSAPP_ANALYZE_PLAN = 'WHATSAPP_ANALYZE_AND_DRAFT';
+
+export function buildWhatsAppPlan(): PlanStep[] {
+  return [
+    'whatsapp.conversation.read',
+    'whatsapp.contact.context.read',
+    'whatsapp.lead.context.read',
+    'whatsapp.product.context.read',
+    'whatsapp.knowledge.search',
+    'whatsapp.intent.classify',
+    'whatsapp.reply.propose',
+    'whatsapp.qualification.propose',
+    'whatsapp.handoff.propose',
+    'whatsapp.draft.validate',
+  ].map((tool) => ({ tool, version: '1' }));
+}
+
 export function buildInboxPlan(): PlanStep[] {
   return [
     'inbox.thread.read',
@@ -318,6 +345,10 @@ export function buildInboxPlan(): PlanStep[] {
     'inbox.draft.create',
     'inbox.eligibility.evaluate',
   ].map((tool) => ({ tool, version: '1' }));
+}
+
+function whatsappTool(name: string, description: string, permission: 'whatsapp.conversations.read' | 'whatsapp.drafts.create', usesModel: boolean): ToolDefinition {
+  return { name, version: '1', description, permission, risk: usesModel ? 'MEDIUM' : 'LOW', approval: 'none', timeoutMs: usesModel ? 180000 : 1000, retries: usesModel ? 1 : 0, idempotent: true, usesModel, external: false };
 }
 
 function campaignTool(name: string, description: string, permission: 'campaigns.read' | 'campaigns.simulate' | 'campaigns.review', usesModel: boolean): ToolDefinition {

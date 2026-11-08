@@ -66,5 +66,11 @@ export function e2eProcessEnv(source: Record<string, string>): Record<string, st
     API_PORT: '3021',
     NODE_ENV: 'development',
     NEXT_PUBLIC_API_BASE_URL: apiOrigin,
+    META_APP_ID: '',
+    META_APP_SECRET: 'salesos-e2e-meta-app-secret-32',
+    META_WEBHOOK_VERIFY_TOKEN: 'salesos-e2e-verify-token',
+    META_GRAPH_API_VERSION: 'v27.0',
+    SALESOS_LIVE_WHATSAPP_SEND_ENABLED: 'false',
+    SALESOS_LIVE_EMAIL_SEND_ENABLED: 'false',
   };
 }

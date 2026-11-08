@@ -1947,3 +1947,289 @@ model CampaignAnalyticsSnapshot {
   @@id([tenantId, id])
   @@map("campaign_analytics_snapshots")
 }
+
+model WhatsappConnection {
+  tenantId         String    @map("tenant_id") @db.Uuid
+  id               String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  displayName      String    @map("display_name")
+  mode             String
+  wabaId           String    @map("waba_id")
+  readiness        String
+  outboundEnabled  Boolean   @default(false) @map("outbound_enabled")
+  disabledAt       DateTime? @map("disabled_at") @db.Timestamptz(6)
+  createdBy        String    @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_connections")
+}
+
+model WhatsappPhoneNumber {
+  tenantId          String    @map("tenant_id") @db.Uuid
+  id                String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId      String    @map("connection_id") @db.Uuid
+  wabaId            String    @map("waba_id")
+  providerPhoneId   String    @map("provider_phone_id")
+  displayNumber     String    @map("display_number")
+  displayName       String    @default("") @map("display_name")
+  verificationState String    @map("verification_state")
+  quality           String    @default("UNKNOWN")
+  inboundEnabled    Boolean   @default(true) @map("inbound_enabled")
+  outboundEnabled   Boolean   @default(false) @map("outbound_enabled")
+  health            String    @default("UNKNOWN")
+  lastVerifiedAt    DateTime? @map("last_verified_at") @db.Timestamptz(6)
+  lastWebhookAt     DateTime? @map("last_webhook_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_phone_numbers")
+}
+
+model WhatsappCredential {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  ciphertext   Bytes
+  hint         String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_credentials")
+}
+
+model WhatsappConversation {
+  tenantId       String    @map("tenant_id") @db.Uuid
+  id             String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phoneId        String    @map("phone_id") @db.Uuid
+  customerE164   String    @map("customer_e164")
+  state          String
+  unreadCount    Int       @default(0) @map("unread_count")
+  lastInboundAt  DateTime? @map("last_inbound_at") @db.Timestamptz(6)
+  lastActivityAt DateTime  @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+  windowState    String    @map("window_state")
+  aiEnabled      Boolean   @default(true) @map("ai_enabled")
+  intent         String    @default("UNKNOWN")
+  assigneeId     String?   @map("assignee_id") @db.Uuid
+  contactId      String?   @map("contact_id") @db.Uuid
+  leadId         String?   @map("lead_id") @db.Uuid
+  takeover       Boolean   @default(false)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_conversations")
+}
+
+model WhatsappMessage {
+  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId    String   @map("conversation_id") @db.Uuid
+  providerMessageId String   @map("provider_message_id")
+  direction         String
+  messageType       String   @map("message_type")
+  body              String?
+  replyTo           String?  @map("reply_to")
+  providerTimestamp DateTime @map("provider_timestamp") @db.Timestamptz(6)
+  origin            String
+  processingStatus  String   @map("processing_status")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_messages")
+}
+
+model WhatsappMessageStatus {
+  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerMessageId String   @map("provider_message_id")
+  providerStatus    String   @map("provider_status")
+  providerTimestamp DateTime @map("provider_timestamp") @db.Timestamptz(6)
+  origin            String
+  matched           Boolean  @default(false)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_message_statuses")
+}
+
+model WhatsappContactLink {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  contactId      String?  @map("contact_id") @db.Uuid
+  leadId         String?  @map("lead_id") @db.Uuid
+  state          String
+  reason         String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_contact_links")
+}
+
+model WhatsappConsent {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phoneId      String   @map("phone_id") @db.Uuid
+  customerE164 String   @map("customer_e164")
+  purpose      String
+  status       String
+  source       String
+  evidence     String   @default("")
+  actorId      String?  @map("actor_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_consents")
+}
+
+model WhatsappTemplate {
+  tenantId   String    @map("tenant_id") @db.Uuid
+  id         String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  language   String
+  category   String
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_templates")
+}
+
+model WhatsappTemplateVersion {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId     String   @map("template_id") @db.Uuid
+  versionNumber  Int      @map("version_number")
+  body           String
+  variables      Json     @default("[]")
+  localStatus    String   @map("local_status")
+  providerStatus String   @map("provider_status")
+  createdBy      String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_template_versions")
+}
+
+model WhatsappDraft {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  id              String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId  String   @map("conversation_id") @db.Uuid
+  sourceMessageId String?  @map("source_message_id") @db.Uuid
+  status          String
+  createdBy       String   @map("created_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_drafts")
+}
+
+model WhatsappDraftVersion {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftId       String   @map("draft_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  body          String
+  source        String
+  modelName     String?  @map("model_name")
+  risk          String   @default("REVIEW")
+  digest        String
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_draft_versions")
+}
+
+model WhatsappApproval {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftVersionId String   @map("draft_version_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  recipient      String
+  digest         String
+  decision       String
+  reviewerId     String   @map("reviewer_id") @db.Uuid
+  consentStatus  String   @map("consent_status")
+  windowState    String   @map("window_state")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_approvals")
+}
+
+model WhatsappAssignment {
+  tenantId       String   @map("tenant_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  assigneeId     String?  @map("assignee_id") @db.Uuid
+  action         String
+  reason         String   @default("")
+  actorId        String   @map("actor_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_assignments")
+}
+
+model WhatsappAlert {
+  tenantId        String    @map("tenant_id") @db.Uuid
+  id              String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code            String
+  summary         String
+  dedupeKey       String    @map("dedupe_key")
+  acknowledgedAt  DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_alerts")
+}
+
+model WhatsappProviderError {
+  tenantId          String   @map("tenant_id") @db.Uuid
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String
+  summary           String
+  providerMessageId String?  @map("provider_message_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_provider_errors")
+}
+
+model WhatsappVerification {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  evidence     String
+  origin       String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_verifications")
+}
+
+model WhatsappWebhookReceipt {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  id        String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventKey  String   @map("event_key")
+  payload   Json
+  status    String
+  origin    String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("whatsapp_webhook_receipts")
+}
+
+model WhatsappIngress {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventKey        String   @unique @map("event_key")
+  providerPhoneId String   @map("provider_phone_id")
+  kind            String
+  status          String
+  origin          String
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("whatsapp_ingress")
+}

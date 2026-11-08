@@ -203,6 +203,23 @@ Phase 4 for the action queue, Phase 6 for mail drafts. Tests: stale version 409;
 | Period | `GET /tenants/{tenantId}/analytics/summary?from=&to=` |
 | Agent outcomes | `GET /tenants/{tenantId}/analytics/agents` from `agent_runs` and `llm_usage` |
 | Campaign mix | Counts from campaigns and leads |
+
+## 7A. WhatsApp (`whatsapp`)
+
+Signed-in `/workspace/whatsapp` uses `WhatsAppDesk`. The page says `LIVE WHATSAPP SENDING DISABLED`. There is no Send control. Database ids stay out of the URL. Navigation tokens open a conversation.
+
+| Control | API |
+|---|---|
+| Overview | `POST /api/v1/management/whatsapp/overview` |
+| Connections | `POST /api/v1/management/whatsapp/connections/list`, `/create`, `/update`, `/disable`, `/rotate` |
+| Phones | `POST /api/v1/management/whatsapp/phones/list`, `/create` |
+| Conversations | `POST /api/v1/management/whatsapp/conversations/list`, `/get`, `/assign`, `/link` |
+| Drafts | `POST /api/v1/management/whatsapp/drafts/prepare`, `/decide` |
+| Templates | `POST /api/v1/management/whatsapp/templates/list`, `/create`, `/version` |
+| Alerts and events | `POST /api/v1/management/whatsapp/alerts/list`, `/acknowledge`, `events/list`, `events/process` |
+| Webhook | `GET` and `POST /api/v1/webhooks/whatsapp` |
+
+`GET` returns the challenge as plain text. `POST` requires `X-Hub-Signature-256`. Neither management route sends a message. Counts on the overview come from tenant rows. Provider-approved templates and real provider statuses are zero until an authentic provider status exists. The live labels stay `LIVE META — NOT CONFIGURED`, `REAL WEBHOOK — NOT TESTED`, and `LIVE WHATSAPP SEND — NOT AUTHORIZED`.
 | Warnings | Briefing provider failures and paused campaigns |
 
 Phase 8. Until aggregates exist, API mode renders empty charts, not the fixed 12-bar array. Tests: period query changes the window; tenant isolation on the aggregate queries.

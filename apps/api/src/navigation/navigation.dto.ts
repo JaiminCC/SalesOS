@@ -32,6 +32,10 @@ export const NAVIGATION_TYPES = [
   'campaign_sequence',
   'campaign_template',
   'campaign_run',
+  'whatsapp_connection',
+  'whatsapp_conversation',
+  'whatsapp_template',
+  'whatsapp_draft',
 ] as const;
 
 export class CreateNavigationDto {

@@ -381,4 +381,18 @@ Sequences are versioned. A frozen version is not edited in place. Steps are emai
 
 `CAMPAIGN_PREPARE_AND_PERSONALIZE` is an additional supervisor plan. Its tools are internal. There is no `campaign.email.send`, `campaign.whatsapp.send`, or `campaign.external.dispatch`. Automated reply detection stays unavailable until a mailbox is configured. Silence is not treated as lack of interest. External sent, delivered, reply, meeting, and conversion counts stay `NOT AVAILABLE`. See `docs/CAMPAIGN_ARCHITECTURE.md`.
 
+## 24. WhatsApp Business foundation (Sprint 10)
+
+Signed-in WhatsApp uses `WhatsAppDesk` at `/workspace/whatsapp`. The sidebar id stays `whatsapp`. Signed-out users still stop at the sign-in screen. The module is generic and multi-tenant.
+
+Graph API calls, when a future sprint is authorized to make them, are pinned to an allowlist. The default is `v27.0`, the version shown on Meta's media and mark-as-read pages as of 5 November 2026. `v17.0` and any version outside `v22.0` through `v27.0` is rejected as `UNSAFE_API_VERSION`. A configured app id is not a connected WABA. A saved phone is not a verified webhook. A signed fixture is `STUB_TESTED` or `LOCAL_CAPTURE`, never `REAL_PROVIDER`.
+
+Inbound webhooks are public and do not use a session. GET returns `hub.challenge` only after the verify token matches. POST checks `X-Hub-Signature-256` against the raw body with HMAC-SHA256 before JSON is trusted. A mapped phone is resolved by `resolve_whatsapp_phone`, which is security-definer and owned by `salesos_directory`. The caller cannot supply a tenant id. Unmapped numbers are quarantined without the message body. Mapped events are stored on a tenant receipt and an outbox row before the worker creates the conversation.
+
+The worker jobs are `whatsapp.webhook.process` and the related health, draft, and alert names. They are idempotent. A killed transaction rolls back. A later worker does not create a second message. No worker calls the Cloud API messages endpoint.
+
+`sendWhatsAppCloudMessage` and `submitWhatsAppTemplate` throw `WHATSAPP_SEND_NOT_AUTHORIZED` before any network call. `SALESOS_LIVE_WHATSAPP_SEND_ENABLED` defaults to false and is forced false when `NODE_ENV` is `test` or `CI` is `true`. Even a true value outside those environments does not reach a fetch, because the adapter throws first. The Sprint 7 email gate is unchanged.
+
+AI plan `WHATSAPP_ANALYZE_AND_DRAFT` uses internal tools only. There is no `whatsapp.message.send`. Inbound text is untrusted. An approval stores a decision and does not dispatch. This workspace has no authorized Meta app, so the labels stay `LIVE META — NOT CONFIGURED`, `REAL WEBHOOK — NOT TESTED`, and `LIVE WHATSAPP SEND — NOT AUTHORIZED`.
+
 The worker and API pass a provider function only when `liveEmailSendEnabled` is true. That function is false when `NODE_ENV` is `test`, when `CI` is `true`, and unless the deployment variable is exactly `true`. The default is off. The database writes an `IN_FLIGHT` attempt and one quota reservation before the HTTP call, then rechecks revocation version, policy revision, approval, and activation state. That recheck and the HTTP call are not atomic. `PROVIDER_ACCEPTED` is not delivery. `DELIVERY_UNKNOWN` is not retried. Graph creates a draft with `Prefer: IdType="ImmutableId"` and does not invent an id when the response has none. That correlation is stub tested, not live verified. Attachments are `NOT SUPPORTED`. The agent tool registry has no live send tool. See `docs/OUTBOUND_QUOTA_RESERVATIONS.md`, `docs/SEND_AUTHORIZATION_FENCING.md`, and `docs/LIVE_EMAIL_SEND_ACCEPTANCE.md`.
