@@ -28,6 +28,8 @@ describe('parseApiEnv', () => {
     expect(() => parseApiEnv({ ...valid, NODE_ENV: 'test', SALESOS_LIVE_EMAIL_SEND_ENABLED: 'true' })).toThrow(/Live email/);
     expect(() => parseApiEnv({ ...valid, NODE_ENV: 'test', SALESOS_LIVE_WHATSAPP_SEND_ENABLED: 'true' })).toThrow(/Live WhatsApp/);
     expect(parseApiEnv(valid).SALESOS_LIVE_WHATSAPP_SEND_ENABLED).toBe('false');
+    expect(() => parseApiEnv({ ...valid, NODE_ENV: 'test', SALESOS_LIVE_CALENDAR_WRITE_ENABLED: 'true' })).toThrow(/Live calendar/);
+    expect(parseApiEnv(valid).SALESOS_LIVE_CALENDAR_WRITE_ENABLED).toBe('false');
     expect(parseApiEnv(valid).SALESOS_LIVE_EMAIL_SEND_ENABLED).toBe('false');
     expect(parseApiEnv(valid).SALESOS_CAPTURE_WEBHOOK_ENABLED).toBe('false');
     expect(() => parseApiEnv({ ...valid, NODE_ENV: 'production', MAIL_MODE: 'disabled', SALESOS_CAPTURE_WEBHOOK_ENABLED: 'true', SALESOS_CAPTURE_WEBHOOK_SECRET: 'x'.repeat(32) })).toThrow(/Capture webhooks/);

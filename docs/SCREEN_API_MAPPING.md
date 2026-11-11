@@ -342,6 +342,24 @@ Tests: user cannot edit an audit row through the API; export excludes tenant B; 
 
 Phase 2 for settings persistence, Phase 4 for policy toggles. Tests: selecting "OpenAI adapter" without credentials leaves status disconnected; enabling transcripts does not create notes without an artifact.
 
+## 24. Meetings and calendar (`meetings`)
+
+Signed-in route: `/workspace/meetings`. Component: `CalendarDesk`. Identifiers stay in POST bodies. Navigation tokens are `calendar_connection`, `calendar_meeting`, and `calendar_meeting_type`.
+
+| Control | API |
+|---|---|
+| Overview and the five not-authorized labels | `POST /api/v1/management/calendar/overview` |
+| Connections | `POST /api/v1/management/calendar/connections/list` and `connections/create` |
+| OAuth start and callback | `connections/oauth/start`, `connections/oauth/callback`. No code is exchanged in Sprint 11. |
+| Working hours and blocked dates | `rules/save`, `rules/block` |
+| Meeting types | `meeting-types/list`, `meeting-types/create` |
+| Local slots | `availability` with `mode: LOCAL_ONLY` |
+| Hold and conflict | `slot-holds/create` |
+| Internal booking, approval, confirm, reschedule, cancel | `booking-requests/create`, `meetings/submit`, `approvals/decide`, `meetings/confirm`, `meetings/reschedule`, `meetings/cancel` |
+| Notes, outcomes, tasks, proposals, analytics, operations | `notes/create`, `outcomes/record`, `tasks/create`, `proposals/create`, `analytics`, `operations` |
+
+There is no external write route and no public booking link. External confirmations, invitation delivery, attendee acceptance, and provider joins render `NOT AVAILABLE` or `NOT AUTHORIZED`.
+
 ## 23. Screen exit rule
 
 A screen leaves demo mode when:

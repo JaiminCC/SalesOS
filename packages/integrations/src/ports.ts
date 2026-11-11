@@ -1,3 +1,4 @@
+import { CalendarWriteClosed } from './calendar-write';
 import { NotConfiguredError } from './errors';
 
 export type TenantCall = { tenantId: string };
@@ -34,7 +35,7 @@ export class UnconfiguredMailbox implements Mailbox {
 
 export class UnconfiguredCalendar implements Calendar {
   book(): Promise<{ providerEventId: string }> {
-    return closed('Calendar', 'book');
+    throw new CalendarWriteClosed();
   }
 }
 

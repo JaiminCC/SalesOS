@@ -19,5 +19,7 @@ export { advanceCampaignRun, campaignAnalytics, campaignPromptFacts, cloneCampai
 export type { CampaignPause } from './campaign-work';
 export { acknowledgeAlert, addPhone, addTemplateVersion, assignConversation, acceptWhatsAppWebhook, conversationDetail, conversationPage, createConnection, createTemplate as createWhatsAppTemplate, decideDraft, disableConnection, executeWhatsAppTool, linkConversation, listAlerts, listConnections, listPhones, prepareConversationDraft, processPendingWhatsApp, processWhatsAppIngress, rotateCredential, templatePreview, updateConnection, whatsappOverview, whatsappPromptFacts, WhatsAppError } from './whatsapp-work';
 export type { WhatsAppPause } from './whatsapp-work';
+export { addMeetingNote, addMeetingTask, approveMeeting, blockCalendarDate, calendarAnalytics, calendarAvailability, calendarOverview, calendarPromptFacts, cancelMeeting, confirmMeeting, consumeCalendarOauth, createCalendarConnection, createInternalMeeting, createMeetingType, disconnectCalendar, executeCalendarTool, expireHeldSlot, holdSlot, listCalendarConnections, listMeetingTypes, meetingPage, meetingRecord, persistAgendaProposal, processCalendarJob, proposeMeeting, reassignMeetingOrganizer, recordCalendarTokenExchange, recordMeetingOutcome, requiredAgendaPhrase, rescheduleMeeting, saveCalendarRule, startCalendarOauth, submitMeeting, CalendarError } from './calendar-work';
+export type { CalendarPause } from './calendar-work';
 export { withTenant } from './with-tenant';
 export { Prisma, PrismaClient } from '@prisma/client';

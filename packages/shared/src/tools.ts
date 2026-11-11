@@ -4,7 +4,7 @@ export type ToolDefinition = {
   name: string;
   version: string;
   description: string;
-  permission: 'products.read' | 'agents.read' | 'agents.manage' | 'mailbox.read' | 'mailbox.draft' | 'campaigns.read' | 'campaigns.simulate' | 'campaigns.review' | 'whatsapp.conversations.read' | 'whatsapp.drafts.create';
+  permission: 'products.read' | 'agents.read' | 'agents.manage' | 'mailbox.read' | 'mailbox.draft' | 'campaigns.read' | 'campaigns.simulate' | 'campaigns.review' | 'whatsapp.conversations.read' | 'whatsapp.drafts.create' | 'calendar.availability.read' | 'calendar.bookings.create' | 'calendar.meetings.read';
   risk: ToolRisk;
   approval: 'none' | 'required';
   timeoutMs: number;
@@ -252,6 +252,17 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   'whatsapp.qualification.propose': whatsappTool('whatsapp.qualification.propose', 'Propose qualification notes. It does not change CRM stage.', 'whatsapp.drafts.create', false),
   'whatsapp.handoff.propose': whatsappTool('whatsapp.handoff.propose', 'Propose a human handoff. It does not assign or send.', 'whatsapp.drafts.create', false),
   'whatsapp.draft.validate': whatsappTool('whatsapp.draft.validate', 'Keep a safe internal draft. It does not send.', 'whatsapp.drafts.create', false),
+  'calendar.connection.read': calendarTool('calendar.connection.read', 'Read calendar connection readiness. It does not book.', 'calendar.availability.read'),
+  'calendar.availability.read': calendarTool('calendar.availability.read', 'Read internal availability. Local slots are not provider free time.', 'calendar.availability.read'),
+  'calendar.meeting_type.read': calendarTool('calendar.meeting_type.read', 'Read a meeting type. It does not create a conference.', 'calendar.meetings.read'),
+  'calendar.slot.suggest': calendarTool('calendar.slot.suggest', 'Suggest internal slots. A suggestion is not a booking.', 'calendar.availability.read'),
+  'calendar.slot.validate': calendarTool('calendar.slot.validate', 'Validate a slot against internal holds.', 'calendar.availability.read'),
+  'calendar.crm.context.read': calendarTool('calendar.crm.context.read', 'Read linked CRM context. It does not change stage.', 'calendar.meetings.read'),
+  'calendar.product.context.read': calendarTool('calendar.product.context.read', 'Read the pinned published product.', 'calendar.meetings.read'),
+  'calendar.meeting.propose': calendarTool('calendar.meeting.propose', 'Propose a meeting for review. It does not book externally.', 'calendar.bookings.create'),
+  'calendar.agenda.propose': calendarTool('calendar.agenda.propose', 'Propose an agenda from stored context.', 'calendar.bookings.create', true),
+  'calendar.approval.propose': calendarTool('calendar.approval.propose', 'Request human review. Approval does not create an external event.', 'calendar.bookings.create'),
+  'calendar.booking.status.read': calendarTool('calendar.booking.status.read', 'Read the internal booking state.', 'calendar.meetings.read'),
   'action.proposal.create': {
     name: 'action.proposal.create',
     version: '1',
@@ -318,6 +329,24 @@ export const INBOX_ANALYZE_PLAN = 'INBOX_ANALYZE_AND_DRAFT';
 
 export const WHATSAPP_ANALYZE_PLAN = 'WHATSAPP_ANALYZE_AND_DRAFT';
 
+export const MEETING_PREPARE_PLAN = 'MEETING_PREPARE_AND_SCHEDULE';
+
+export function buildMeetingPlan(): PlanStep[] {
+  return [
+    'calendar.connection.read',
+    'calendar.availability.read',
+    'calendar.meeting_type.read',
+    'calendar.slot.suggest',
+    'calendar.slot.validate',
+    'calendar.crm.context.read',
+    'calendar.product.context.read',
+    'calendar.meeting.propose',
+    'calendar.agenda.propose',
+    'calendar.approval.propose',
+    'calendar.booking.status.read',
+  ].map((tool) => ({ tool, version: '1' }));
+}
+
 export function buildWhatsAppPlan(): PlanStep[] {
   return [
     'whatsapp.conversation.read',
@@ -345,6 +374,10 @@ export function buildInboxPlan(): PlanStep[] {
     'inbox.draft.create',
     'inbox.eligibility.evaluate',
   ].map((tool) => ({ tool, version: '1' }));
+}
+
+function calendarTool(name: string, description: string, permission: 'calendar.availability.read' | 'calendar.bookings.create' | 'calendar.meetings.read', usesModel = false): ToolDefinition {
+  return { name, version: '1', description, permission, risk: usesModel ? 'MEDIUM' : 'LOW', approval: name === 'calendar.approval.propose' ? 'required' : 'none', timeoutMs: usesModel ? 180000 : 1000, retries: usesModel ? 1 : 0, idempotent: true, usesModel, external: false };
 }
 
 function whatsappTool(name: string, description: string, permission: 'whatsapp.conversations.read' | 'whatsapp.drafts.create', usesModel: boolean): ToolDefinition {

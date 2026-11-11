@@ -2233,3 +2233,288 @@ model WhatsappIngress {
 
   @@map("whatsapp_ingress")
 }
+
+model CalendarConnection {
+  tenantId          String    @map("tenant_id") @db.Uuid
+  id                String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider          String
+  displayName       String    @map("display_name")
+  readiness         String
+  grantedScopes     String    @default("") @map("granted_scopes")
+  providerSubject   String    @default("") @map("provider_subject")
+  writeEnabled      Boolean   @default(false) @map("write_enabled")
+  disabledAt        DateTime? @map("disabled_at") @db.Timestamptz(6)
+  revocationVersion Int       @default(1) @map("revocation_version")
+  createdBy         String    @map("created_by") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_connections")
+}
+
+model CalendarCalendar {
+  tenantId           String   @map("tenant_id") @db.Uuid
+  id                 String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId       String?  @map("connection_id") @db.Uuid
+  organizerId        String   @map("organizer_id") @db.Uuid
+  displayName        String   @map("display_name")
+  timeZone           String   @map("time_zone")
+  providerCalendarId String   @default("") @map("provider_calendar_id")
+  isDefault          Boolean  @default(false) @map("is_default")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_calendars")
+}
+
+model CalendarCredential {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  ciphertext   Bytes
+  hint         String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_credentials")
+}
+
+model CalendarOauthState {
+  tenantId            String    @map("tenant_id") @db.Uuid
+  id                  String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId        String    @map("connection_id") @db.Uuid
+  stateHash           String    @unique @map("state_hash")
+  verifierCiphertext  Bytes     @map("verifier_ciphertext")
+  redirectUri         String    @map("redirect_uri")
+  expiresAt           DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt          DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdBy           String    @map("created_by") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_oauth_states")
+}
+
+model CalendarRule {
+  tenantId             String   @map("tenant_id") @db.Uuid
+  id                   String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizerId          String   @map("organizer_id") @db.Uuid
+  timeZone             String   @map("time_zone")
+  workingHours         Json     @map("working_hours")
+  bufferBeforeMinutes  Int      @default(0) @map("buffer_before_minutes")
+  bufferAfterMinutes   Int      @default(0) @map("buffer_after_minutes")
+  noticeMinutes        Int      @default(60) @map("notice_minutes")
+  horizonDays          Int      @default(14) @map("horizon_days")
+  createdBy            String   @map("created_by") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_rules")
+}
+
+model CalendarBlockedDate {
+  tenantId    String   @map("tenant_id") @db.Uuid
+  id          String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizerId String   @map("organizer_id") @db.Uuid
+  localDate   DateTime @map("local_date") @db.Date
+  reason      String   @default("")
+  createdBy   String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_blocked_dates")
+}
+
+model CalendarMeetingType {
+  tenantId         String    @map("tenant_id") @db.Uuid
+  id               String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  description      String    @default("")
+  durationMinutes  Int       @map("duration_minutes")
+  locationType     String    @map("location_type")
+  timeZone         String    @map("time_zone")
+  approvalRequired Boolean   @default(true) @map("approval_required")
+  active           Boolean   @default(true)
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy        String    @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_meeting_types")
+}
+
+model CalendarMeetingTypeHost {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingTypeId String   @map("meeting_type_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, meetingTypeId, userId])
+  @@map("calendar_meeting_type_hosts")
+}
+
+model CalendarHold {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizerId   String   @map("organizer_id") @db.Uuid
+  meetingTypeId String   @map("meeting_type_id") @db.Uuid
+  startAt       DateTime @map("start_at") @db.Timestamptz(6)
+  endAt         DateTime @map("end_at") @db.Timestamptz(6)
+  timeZone      String   @map("time_zone")
+  status        String
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(6)
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_holds")
+}
+
+model CalendarMeeting {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingTypeId    String   @map("meeting_type_id") @db.Uuid
+  organizerId      String   @map("organizer_id") @db.Uuid
+  holdId           String?  @map("hold_id") @db.Uuid
+  title            String
+  agenda           String   @default("")
+  startAt          DateTime @map("start_at") @db.Timestamptz(6)
+  endAt            DateTime @map("end_at") @db.Timestamptz(6)
+  timeZone         String   @map("time_zone")
+  locationType     String   @map("location_type")
+  state            String
+  availabilityMode String   @map("availability_mode")
+  version          Int      @default(1)
+  leadId           String?  @map("lead_id") @db.Uuid
+  contactId        String?  @map("contact_id") @db.Uuid
+  accountId        String?  @map("account_id") @db.Uuid
+  sourceKind       String   @default("MANUAL") @map("source_kind")
+  sourceId         String?  @map("source_id") @db.Uuid
+  createdBy        String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_meetings")
+}
+
+model CalendarApproval {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  id         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingId  String   @map("meeting_id") @db.Uuid
+  version    Int
+  digest     String
+  decision   String
+  reviewerId String   @map("reviewer_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_approvals")
+}
+
+model CalendarNote {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  id        String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingId String   @map("meeting_id") @db.Uuid
+  body      String
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_notes")
+}
+
+model CalendarOutcome {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  id        String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingId String   @map("meeting_id") @db.Uuid
+  outcome   String
+  note      String   @default("")
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_outcomes")
+}
+
+model CalendarTask {
+  tenantId   String    @map("tenant_id") @db.Uuid
+  id         String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingId  String    @map("meeting_id") @db.Uuid
+  title      String
+  dueOn      DateTime? @map("due_on") @db.Date
+  assigneeId String?   @map("assignee_id") @db.Uuid
+  status     String    @default("OPEN")
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_tasks")
+}
+
+model CalendarActivity {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  id        String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingId String?  @map("meeting_id") @db.Uuid
+  action    String
+  actorId   String   @map("actor_id") @db.Uuid
+  detail    String   @default("")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_activity")
+}
+
+model CalendarAlert {
+  tenantId       String    @map("tenant_id") @db.Uuid
+  id             String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String
+  summary        String
+  dedupeKey      String    @map("dedupe_key")
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, dedupeKey])
+  @@map("calendar_alerts")
+}
+
+model CalendarProviderError {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String?  @map("connection_id") @db.Uuid
+  code         String
+  summary      String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_provider_errors")
+}
+
+model CalendarVerification {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  evidence     String
+  origin       String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_verifications")
+}
+
+model CalendarExternalLink {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  id              String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingId       String   @map("meeting_id") @db.Uuid
+  correlationId   String   @map("correlation_id") @db.Uuid
+  state           String
+  providerEventId String?  @map("provider_event_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([tenantId, id])
+  @@map("calendar_external_links")
+}

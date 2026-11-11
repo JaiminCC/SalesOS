@@ -36,6 +36,9 @@ export const NAVIGATION_TYPES = [
   'whatsapp_conversation',
   'whatsapp_template',
   'whatsapp_draft',
+  'calendar_connection',
+  'calendar_meeting',
+  'calendar_meeting_type',
 ] as const;
 
 export class CreateNavigationDto {

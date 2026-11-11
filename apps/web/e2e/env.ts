@@ -72,5 +72,6 @@ export function e2eProcessEnv(source: Record<string, string>): Record<string, st
     META_GRAPH_API_VERSION: 'v27.0',
     SALESOS_LIVE_WHATSAPP_SEND_ENABLED: 'false',
     SALESOS_LIVE_EMAIL_SEND_ENABLED: 'false',
+    SALESOS_LIVE_CALENDAR_WRITE_ENABLED: 'false',
   };
 }

@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [swc.vite({ module: { type: 'es6' } })],
   test: {
     environment: 'node',
-    include: ['src/crm/lead-model.acceptance.ts', 'src/mailbox/inbox-model.acceptance.ts', 'src/campaigns/campaign-model.acceptance.ts', 'src/whatsapp/whatsapp-model.acceptance.ts'],
+    include: ['src/crm/lead-model.acceptance.ts', 'src/mailbox/inbox-model.acceptance.ts', 'src/campaigns/campaign-model.acceptance.ts', 'src/whatsapp/whatsapp-model.acceptance.ts', 'src/calendar/calendar-model.acceptance.ts'],
     fileParallelism: false,
     testTimeout: 600_000,
     hookTimeout: 60_000,

@@ -912,4 +912,8 @@ External campaign delivery remains not authorized. A campaign may be `APPROVED` 
 
 ## Sprint 10 status
 
-Sprint 10 adds a multi-tenant WhatsApp Business foundation. The requirement map is `docs/SPRINT_10_IMPLEMENTATION_PLAN.md`. Live Meta connectivity is **NOT CONFIGURED**. Real provider webhooks are **NOT TESTED**. Live WhatsApp sending is **NOT AUTHORIZED**. Local signed fixtures are **STUB_TESTED**. Sprint 11 has not started.
+Sprint 10 adds a multi-tenant WhatsApp Business foundation. The requirement map is `docs/SPRINT_10_IMPLEMENTATION_PLAN.md`. Live Meta connectivity is **NOT CONFIGURED**. Real provider webhooks are **NOT TESTED**. Live WhatsApp sending is **NOT AUTHORIZED**. Local signed fixtures are **STUB_TESTED**.
+
+## Sprint 11 status
+
+Sprint 11 adds internal calendar readiness, working hours, meeting types, slot holds, and internal meetings. The requirement map is `docs/SPRINT_11_IMPLEMENTATION_PLAN.md`. Live Google Calendar is **NOT CONFIGURED**. Live Microsoft Calendar is **NOT CONFIGURED**. Real free/busy is **NOT TESTED**. External event creation and calendar invitations are **NOT AUTHORIZED**. Local bookings are **LOCAL_TESTED**. Sprint 12 has not started.

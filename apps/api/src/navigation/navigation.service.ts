@@ -49,6 +49,9 @@ const READ_PERMISSION: Record<string, string | null> = {
   whatsapp_conversation: 'whatsapp.conversations.read',
   whatsapp_template: 'whatsapp.templates.read',
   whatsapp_draft: 'whatsapp.drafts.review',
+  calendar_connection: 'calendar.connections.read',
+  calendar_meeting: 'calendar.meetings.read',
+  calendar_meeting_type: 'calendar.meeting_types.read',
 };
 
 @Injectable()
@@ -208,6 +211,9 @@ export class NavigationService {
     if (input.resourceType === 'whatsapp_conversation') await this.visibleCrm(actor, 'whatsappConversation', input.resourceId!);
     if (input.resourceType === 'whatsapp_template') await this.visibleCrm(actor, 'whatsappTemplate', input.resourceId!);
     if (input.resourceType === 'whatsapp_draft') await this.visibleCrm(actor, 'whatsappDraft', input.resourceId!);
+    if (input.resourceType === 'calendar_connection') await this.visibleCrm(actor, 'calendarConnection', input.resourceId!);
+    if (input.resourceType === 'calendar_meeting') await this.visibleCrm(actor, 'calendarMeeting', input.resourceId!);
+    if (input.resourceType === 'calendar_meeting_type') await this.visibleCrm(actor, 'calendarMeetingType', input.resourceId!);
   }
 
   private async visibleMember(actor: SessionContext, userId: string): Promise<void> {
@@ -231,7 +237,7 @@ export class NavigationService {
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Session was not found');
   }
 
-  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate' | 'mailboxConnection' | 'mailboxThread' | 'mailboxDraft' | 'campaign' | 'audienceSegment' | 'campaignSequence' | 'campaignTemplate' | 'campaignRun' | 'whatsappConnection' | 'whatsappConversation' | 'whatsappTemplate' | 'whatsappDraft', id: string): Promise<void> {
+  private async visibleCrm(actor: SessionContext, model: 'crmAccount' | 'crmContact' | 'crmLead' | 'crmImportBatch' | 'crmDiscoveryJob' | 'crmSuppression' | 'crmDuplicateCandidate' | 'mailboxConnection' | 'mailboxThread' | 'mailboxDraft' | 'campaign' | 'audienceSegment' | 'campaignSequence' | 'campaignTemplate' | 'campaignRun' | 'whatsappConnection' | 'whatsappConversation' | 'whatsappTemplate' | 'whatsappDraft' | 'calendarConnection' | 'calendarMeeting' | 'calendarMeetingType', id: string): Promise<void> {
     const tenantId = this.tenant(actor);
     const row = await withTenant(this.database.prisma, tenantId, (tx) => (tx[model] as { findUnique: (input: unknown) => Promise<unknown> }).findUnique({ where: { tenantId_id: { tenantId, id } } }));
     if (!row) throw new ApiException(404, 'NOT_FOUND', 'Record was not found');
@@ -284,6 +290,9 @@ function writePermission(resourceType: string, action: string): string | null {
   if (resourceType === 'whatsapp_conversation') return 'whatsapp.conversations.manage';
   if (resourceType === 'whatsapp_template') return 'whatsapp.templates.manage';
   if (resourceType === 'whatsapp_draft') return 'whatsapp.drafts.review';
+  if (resourceType === 'calendar_connection') return 'calendar.connections.manage';
+  if (resourceType === 'calendar_meeting') return 'calendar.meetings.manage';
+  if (resourceType === 'calendar_meeting_type') return 'calendar.meeting_types.manage';
   return 'settings.manage';
 }
 

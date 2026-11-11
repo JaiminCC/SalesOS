@@ -1,7 +1,7 @@
 import { Queue, UnrecoverableError, type Job } from 'bullmq';
-import { Prisma, decodeEncryptionKey, importCrmBatch, processCampaignJob, processWhatsAppIngress, qualifyCrmLead, reconcileSend, runCrmDiscovery, sendDraft, syncConnection, withTenant, type PrismaClient } from '@salesos/database';
+import { CalendarError, Prisma, decodeEncryptionKey, importCrmBatch, processCalendarJob, processCampaignJob, processWhatsAppIngress, qualifyCrmLead, reconcileSend, runCrmDiscovery, sendDraft, syncConnection, withTenant, type PrismaClient } from '@salesos/database';
 import { reconcileGmail, reconcileGraph, sendWithGmail, sendWithGraph } from '@salesos/integrations';
-import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CAMPAIGN_JOB_NAMES, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_EVENT, MAILBOX_SEND_JOB, MAILBOX_SYNC_EVENT, MAILBOX_SYNC_JOB, WHATSAPP_JOB_NAMES, foundationJobId, liveEmailSendEnabled, type AgentRunJobData, type CampaignJobData, type CampaignJobName, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData, type WhatsAppJobData } from '@salesos/shared';
+import { AGENT_RUN_EVENT, AGENT_RUN_JOB, CALENDAR_JOB_NAMES, CAMPAIGN_JOB_NAMES, CRM_DISCOVERY_EVENT, CRM_DISCOVERY_JOB, CRM_IMPORT_EVENT, CRM_IMPORT_JOB, CRM_QUALIFY_EVENT, CRM_QUALIFY_JOB, FOUNDATION_PING_EVENT, FOUNDATION_PING_JOB, KNOWLEDGE_PROCESS_EVENT, KNOWLEDGE_PROCESS_JOB, MAILBOX_INCREMENTAL_JOB, MAILBOX_RECONCILE_JOB, MAILBOX_SEND_EVENT, MAILBOX_SEND_JOB, MAILBOX_SYNC_EVENT, MAILBOX_SYNC_JOB, WHATSAPP_JOB_NAMES, foundationJobId, liveEmailSendEnabled, type AgentRunJobData, type CalendarJobData, type CampaignJobData, type CampaignJobName, type CrmJobData, type FoundationJobData, type KnowledgeJobData, type MailboxJobData, type WhatsAppJobData } from '@salesos/shared';
 
 type PendingOutbox = {
   tenant_id: string;
@@ -15,7 +15,7 @@ export async function listPendingOutbox(prisma: PrismaClient): Promise<PendingOu
   return prisma.$queryRaw<PendingOutbox[]>(Prisma.sql`SELECT * FROM public.list_pending_outbox(25)`);
 }
 
-export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData | CampaignJobData | WhatsAppJobData>): Promise<number> {
+export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<FoundationJobData | KnowledgeJobData | AgentRunJobData | CrmJobData | MailboxJobData | CampaignJobData | WhatsAppJobData | CalendarJobData>): Promise<number> {
   const pending = await listPendingOutbox(prisma);
   let published = 0;
   for (const row of pending) {
@@ -44,6 +44,11 @@ export async function publishPendingOutbox(prisma: PrismaClient, queue: Queue<Fo
         const name = row.event_type.slice(0, -3);
         if (!(WHATSAPP_JOB_NAMES as readonly string[]).includes(name)) continue;
         const data: WhatsAppJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
+        await queue.add(name, data, options);
+      } else if (row.event_type.startsWith('calendar.') && row.event_type.endsWith('.v1')) {
+        const name = row.event_type.slice(0, -3);
+        if (!(CALENDAR_JOB_NAMES as readonly string[]).includes(name)) continue;
+        const data: CalendarJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
         await queue.add(name, data, options);
       } else if (row.event_type === MAILBOX_SYNC_EVENT || row.event_type === MAILBOX_SEND_EVENT) {
         const data: MailboxJobData = { tenantId: row.tenant_id, recordId: row.aggregate_id, outboxId: row.id };
@@ -165,6 +170,20 @@ export async function processWhatsAppWorkerJob(job: Job<WhatsAppJobData>, prisma
   const payload = (event?.payload ?? {}) as { userId?: string };
   const result = await processWhatsAppIngress(prisma, { ingressId: recordId, userId: payload.userId ?? '', encryptionKey: decodeEncryptionKey(encryptionKey) });
   if (result.stopped === 'TENANT_SUSPENDED' || result.stopped === 'AUTH_REVOKED') throw new Error(result.stopped);
+  await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.updateMany({ where: { tenantId, id: outboxId, status: 'PENDING' }, data: { status: 'PROCESSED', processedAt: new Date() } }));
+  return { done: true };
+}
+
+export async function processCalendarWorkerJob(job: Job<CalendarJobData>, prisma: PrismaClient): Promise<{ done: true }> {
+  const { tenantId, outboxId } = job.data;
+  const event = await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.findUnique({ where: { tenantId_id: { tenantId, id: outboxId } } }));
+  const payload = (event?.payload ?? {}) as { userId?: string };
+  try {
+    await processCalendarJob(prisma, { tenantId, userId: payload.userId ?? '' });
+  } catch (error) {
+    if (error instanceof CalendarError && (error.code === 'TENANT_SUSPENDED' || error.code === 'AUTH_REVOKED')) throw new Error(error.code);
+    throw error;
+  }
   await withTenant(prisma, tenantId, (tx) => tx.outboxEvent.updateMany({ where: { tenantId, id: outboxId, status: 'PENDING' }, data: { status: 'PROCESSED', processedAt: new Date() } }));
   return { done: true };
 }

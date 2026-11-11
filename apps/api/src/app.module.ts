@@ -16,6 +16,8 @@ import { CampaignController } from './campaigns/campaign.controller';
 import { CampaignService } from './campaigns/campaign.service';
 import { WhatsAppController, WhatsAppWebhookController } from './whatsapp/whatsapp.controller';
 import { WhatsAppService } from './whatsapp/whatsapp.service';
+import { CalendarController } from './calendar/calendar.controller';
+import { CalendarService } from './calendar/calendar.service';
 import { CrmController } from './crm/crm.controller';
 import { CrmService } from './crm/crm.service';
 import { MailboxController, MailboxOauthController } from './mailbox/mailbox.controller';
@@ -30,8 +32,8 @@ import { FoundationQueue } from './jobs/queue.provider';
 import { RedisService } from './redis/redis.service';
 
 @Module({
-  controllers: [HealthProbeController, HealthController, JobsController, AuthController, OrganizationsController, ProductsController, ProductDefaultsController, NavigationController, ManagementController, AgentsController, CrmController, MailboxController, MailboxOauthController, CampaignController, WhatsAppController, WhatsAppWebhookController],
-  providers: [AppConfig, DatabaseService, RedisService, HealthService, FoundationQueue, JobsService, IdentityDatabase, IdentityService, CsrfMiddleware, ProductsService, NavigationService, AgentsService, CrmService, MailboxConnectionService, MailboxSyncService, MailboxMessageService, MailboxSendService, MailboxWebhookService, MailboxHealthService, CampaignService, WhatsAppService],
+  controllers: [HealthProbeController, HealthController, JobsController, AuthController, OrganizationsController, ProductsController, ProductDefaultsController, NavigationController, ManagementController, AgentsController, CrmController, MailboxController, MailboxOauthController, CampaignController, WhatsAppController, WhatsAppWebhookController, CalendarController],
+  providers: [AppConfig, DatabaseService, RedisService, HealthService, FoundationQueue, JobsService, IdentityDatabase, IdentityService, CsrfMiddleware, ProductsService, NavigationService, AgentsService, CrmService, MailboxConnectionService, MailboxSyncService, MailboxMessageService, MailboxSendService, MailboxWebhookService, MailboxHealthService, CampaignService, WhatsAppService, CalendarService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

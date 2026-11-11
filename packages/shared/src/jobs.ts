@@ -100,3 +100,23 @@ export type WhatsAppJobData = {
   recordId: string;
   outboxId: string;
 };
+
+export const CALENDAR_AVAILABILITY_JOB = 'calendar.availability.refresh';
+export const CALENDAR_HOLD_EXPIRE_JOB = 'calendar.slot.hold.expire';
+export const CALENDAR_PREPARE_JOB = 'calendar.booking.prepare';
+export const CALENDAR_CONFIRM_JOB = 'calendar.booking.confirm_internal';
+export const CALENDAR_RESCHEDULE_JOB = 'calendar.booking.reschedule_internal';
+export const CALENDAR_CANCEL_JOB = 'calendar.booking.cancel_internal';
+export const CALENDAR_PROPOSAL_JOB = 'calendar.ai.proposal';
+export const CALENDAR_AGENDA_JOB = 'calendar.ai.agenda';
+export const CALENDAR_FOLLOWUP_JOB = 'calendar.meeting.followup.prepare';
+export const CALENDAR_HEALTH_JOB = 'calendar.connection.health';
+export const CALENDAR_ANALYTICS_JOB = 'calendar.analytics.aggregate';
+export const CALENDAR_JOB_NAMES = [CALENDAR_AVAILABILITY_JOB, CALENDAR_HOLD_EXPIRE_JOB, CALENDAR_PREPARE_JOB, CALENDAR_CONFIRM_JOB, CALENDAR_RESCHEDULE_JOB, CALENDAR_CANCEL_JOB, CALENDAR_PROPOSAL_JOB, CALENDAR_AGENDA_JOB, CALENDAR_FOLLOWUP_JOB, CALENDAR_HEALTH_JOB, CALENDAR_ANALYTICS_JOB] as const;
+export type CalendarJobName = (typeof CALENDAR_JOB_NAMES)[number];
+
+export type CalendarJobData = {
+  tenantId: string;
+  recordId: string;
+  outboxId: string;
+};

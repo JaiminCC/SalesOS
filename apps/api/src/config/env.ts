@@ -22,6 +22,7 @@ const schema = z.object({
   CI: z.string().optional(),
   SALESOS_LIVE_EMAIL_SEND_ENABLED: z.enum(['true', 'false']).default('false'),
   SALESOS_LIVE_WHATSAPP_SEND_ENABLED: z.enum(['true', 'false']).default('false'),
+  SALESOS_LIVE_CALENDAR_WRITE_ENABLED: z.enum(['true', 'false']).default('false'),
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
@@ -60,6 +61,9 @@ const schema = z.object({
   }
   if (value.SALESOS_LIVE_WHATSAPP_SEND_ENABLED === 'true' && (value.NODE_ENV === 'test' || value.CI === 'true')) {
     context.addIssue({ code: 'custom', path: ['SALESOS_LIVE_WHATSAPP_SEND_ENABLED'], message: 'Live WhatsApp sending is disabled when NODE_ENV=test or CI=true' });
+  }
+  if (value.SALESOS_LIVE_CALENDAR_WRITE_ENABLED === 'true' && (value.NODE_ENV === 'test' || value.CI === 'true')) {
+    context.addIssue({ code: 'custom', path: ['SALESOS_LIVE_CALENDAR_WRITE_ENABLED'], message: 'Live calendar writes are disabled when NODE_ENV=test or CI=true' });
   }
   if (value.NODE_ENV === 'production' && value.SALESOS_CAPTURE_WEBHOOK_ENABLED === 'true') {
     context.addIssue({ code: 'custom', path: ['SALESOS_CAPTURE_WEBHOOK_ENABLED'], message: 'Capture webhooks are refused in production' });
